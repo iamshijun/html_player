@@ -1,0 +1,25 @@
+{
+  "name": "player",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "core-js": "^3.40.0",
+    "nosleep.js": "^0.12.0",
+    "promise-polyfill": "^8.3.0",
+    "regenerator-runtime": "^0.14.1",
+    "smoothscroll-polyfill": "^0.4.4",
+    "vue": "^3.5.13",
+    "whatwg-fetch": "^3.6.20"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-legacy": "^6.0.0",
+    "@vitejs/plugin-vue": "^5.2.1",
+    "vite": "^6.0.5"
+  }
+}
