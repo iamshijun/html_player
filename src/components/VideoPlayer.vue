@@ -1,111 +1,120 @@
 <template>
-    <div class="video-player">
-        <video ref="videoPlayer"
-            @loadedmetadata="onLoadedMetadata"
-            @ended="onPlayPausedEnded"
-            @pause="onPlayPausedEnded"
-            @play="onPlayStarted"
-
-            @dblclick="handleDoubleClick"
-            @mousedown="handleMouseDown"
-            @mouseup="handleMouseUp" 
-            @mouseleave="handleMouseLeave"
-            @mousemove="handleMouseMove($event)" 
-
-            @touchstart.prevent="handleTouchStart($event)"
-            @touchmove.prevent="handleTouchMove($event)" 
-            @touchend="handleTouchEnd"
-            >
-            <source :src="fileUrl" :type="mimeType">
-            您的浏览器不支持视频播放
-        </video>
-        
-        <!-- Custom Controls -->
-        <div class="custom-controls" v-show="showControls">
-            <div class="progress-bar"
-                @mousemove="handleScrubHover"
-                @mouseleave="handleScrubLeave"
-                @click="handleScrubClick"
+    <div class="video-container">
+        <div class="video-player">
+            <video ref="videoPlayer" 
+                @loadedmetadata="onLoadedMetadata" 
+                @ended="onPlayPausedEnded"
+                @pause="onPlayPausedEnded" 
+                @play="onPlayStarted" 
+                
+                @dblclick="handleDoubleClick"
+                @mousedown="handleMouseDown"
+                @mouseup="handleMouseUp"
+                @mouseleave="handleMouseLeave"
+                @mousemove="handleMouseMove($event)"
+                @touchstart.prevent="handleTouchStart($event)"
+                @touchmove.prevent="handleTouchMove($event)" 
+                @touchend="handleTouchEnd"
+                controls="false"
                 >
-                <div class="progress" :style="{ width: progress + '%' }"></div>
-                <div class="scrubber"
-                    v-show="isScrubbing || isHovering"
-                    :style="{ left: scrubPosition + '%' }"></div>
-                <div class="srubber-time-tooltip" 
-                    v-show="isHovering"
-                    :style="{ left: scrubPosition + 'px' }">
-                    {{ hoverTime }}
+
+                <source :src="fileUrl" :type="mimeType">
+                您的浏览器不支持视频播放
+            </video>
+
+            <!-- Custom Controls -->
+            <div class="custom-controls" v-show="showControls">
+                <div class="progress-bar" @mousemove="handleScrubHover" @mouseleave="handleScrubLeave"
+                    @click="handleScrubClick">
+                    <div class="progress" :style="{ width: progress + '%' }"></div>
+                    <div class="scrubber" v-show="isScrubbing || isHovering" :style="{ left: scrubPosition + '%' }">
+                    </div>
+                    <div class="srubber-time-tooltip" v-show="isHovering" :style="{ left: scrubPosition + 'px' }">
+                        {{ hoverTime }}
+                    </div>
+                </div>
+                <div class="control-buttons">
+                    <button @click="togglePlay">
+                        {{ isPlaying ? '❚❚' : '▶' }}
+                    </button>
+                    <span class="padding"></span>
+                    <span class="time-display">
+                        {{ currentTime }} / {{ duration }}
+                    </span>
+                    <button class="fullscreen-btn" @click="toggleFullscreen">
+                        {{ isFullscreen ? '⤢' : '⤡' }}
+                    </button>
                 </div>
             </div>
-            <div class="control-buttons">
-                <button @click="togglePlay">
-                    {{ isPlaying ? '❚❚' : '▶' }}
-                </button>
-                <span class="time-display">
-                    {{ currentTime }} / {{ duration }}
-                </span>
+
+            <div class="media-settings-menu" v-if="showSettings">
+                <div class="media-setting-item">
+                    <label>双击跳转秒数：</label>
+                    <input type="number" v-model.number="jumpSeconds" min="1" max="60">
+                </div>
+                <div class="media-setting-item">
+                    <label>双击行为：</label>
+                    <select v-model="doubleClickBehavior">
+                        <option value="seek">快进/后退</option>
+                        <option value="toggle">停止/播放</option>
+                    </select>
+                </div>
+
+                <div class="media-setting-item">
+                    <label>选择本地文件：</label>
+                    <input type="file" accept="video/*,audio/*" @change="handleFileChange" />
+                </div>
+
+                <div class="media-setting-item url-input">
+                    <button @click="loadUrl">加载</button>
+                    <input type="text" v-model="videoUrl" placeholder="输入视频URL">
+                </div>
             </div>
-        </div>
-        
-        <div class="media-settings-menu" v-if="showSettings">
-            <div class="media-setting-item">
-                <label>双击跳转秒数：</label>
-                <input type="number" v-model.number="jumpSeconds" min="1" max="60">
+            <div class="media-settings-icon" @click="toggleSettings">
+                <span>⚙️</span>
             </div>
-            <div class="media-setting-item">
-                <label>双击行为：</label>
-                <select v-model="doubleClickBehavior">
-                    <option value="seek">快进/后退</option>
-                    <option value="toggle">停止/播放</option>
-                </select>
-            </div>
-        </div>
-        <div class="media-settings-icon" @click="toggleSettings">
-            <span>⚙️</span>
-        </div>
-        <input type="file" accept="video/*,audio/*" @change="handleFileChange" />
-        <div class="url-input">
-            <input type="text" v-model="videoUrl" placeholder="输入视频URL">
-            <button @click="loadUrl">加载</button>
         </div>
     </div>
 </template>
 
 <script>
 import NoSleep from 'nosleep.js';
-import {ref} from 'vue';
+import { ref } from 'vue';
 import '/src/backport.js'
 
+function adjustSafeArea() {
+    const windowHeight = window.innerHeight;
+    const documentHeight = document.documentElement.clientHeight;
+    const safeAreaBottom = Math.max(0, windowHeight - documentHeight);
+    console.log(`windowHeight:${windowHeight} , documentHeight:${documentHeight}, safeAreaBottom:${safeAreaBottom}`)
+    document.documentElement.style.setProperty('--safe-area-bottom', `${safeAreaBottom}px`);
+}
+
 export default {
-    props : {
-        eventbus: { 
-            required:false
-        }
-    },
-    watch: { 
-        eventbus(newValue,oldValue) {
-            if(this.isLoaded){
+    watch: {
+        eventbus(newValue, oldValue) {
+            if (this.isLoaded) {
                 const video = this.videoPlayer
-                if(video.paused || video.ended){
+                if (video.paused || video.ended) {
                     video.play()
-                }else{
+                } else {
                     video.pause()
                 }
             }
-        } 
+        }
     },
     data() {
         return {
             fileUrl: '',//选择的本地系统文件
             videoUrl: '', // URL输入
-           
+
             mimeType: '',
             isLoaded: false,//媒体文件是否加载完成
             isVideo: true,
             /* 用户motion动作信息记录 */
             isMouseDown: false,
-            isLongPress : false,
-            hasMove : false,
+            isLongPress: false,
+            hasMove: false,
             lastTapTime: 0,
             tapTimeout: null,
             touchStartX: 0,
@@ -117,7 +126,6 @@ export default {
             jumpSeconds: 5, // 默认跳转秒数
             doubleClickBehavior: 'toggle', // 双击行为：seek-快进后退，toggle-停止播放
 
-           
             showControls: false,
             isPlaying: false,
             progress: 0,
@@ -128,7 +136,8 @@ export default {
             isHovering: false,
             hoverTime: '00:00',
             tooltipPosition: 0,
-            controlsTimeout: null //hideControl timeout
+            controlsTimeout: null, //hideControl timeout
+            isFullscreen: false
         }
     },
     setup() {
@@ -138,11 +147,13 @@ export default {
         }
     },
     mounted() {
+        // adjustSafeArea()
         const video = this.videoPlayer;
-        
+
         // Initialize controls
         video.addEventListener('timeupdate', this.updateProgress);
-        
+        // video.addEventListener('fullscreenchange', function() {
+        // });
         if (this.isMobile()) {
             this.noSleep = new NoSleep();
         }
@@ -167,7 +178,7 @@ export default {
             }
             this.isPlaying = true
         },
-        onPlayPausedEnded() { 
+        onPlayPausedEnded() {
             if (this.noSleep) {
                 this.noSleep.disable()
             }
@@ -238,7 +249,8 @@ export default {
         },
 
         handleTouchStart(event) {
-            if (!this.isMobile()) return 
+            this.showSettings = false
+            if (!this.isMobile()) return
 
             if (this.controlsTimeout) {
                 clearTimeout(this.controlsTimeout);
@@ -254,19 +266,19 @@ export default {
 
             const longPress = this.isLongPress
             //console.log("tapLength",tapLength)
-       
-            if (doubleClick || longPress) { 
-                if(doubleClick && this.doubleClickBehavior == 'toggle') {
-                    console.log("doubleClick togglePlay",tapLength)
+
+            if (doubleClick || longPress) {
+                if (doubleClick && this.doubleClickBehavior == 'toggle') {
+                    console.log("doubleClick togglePlay", tapLength)
                     this.togglePlay()
-                }else{
+                } else {
                     const video = this.videoPlayer
-                
+
                     const rect = video.getBoundingClientRect()
                     const touchX = this.touchStartX - rect.left
                     const width = rect.width
 
-                    if(this.isLoaded){
+                    if (this.isLoaded) {
                         if (touchX < width / 2) {//left
                             if (longPress) {
                                 video.playbackRate = 0.8
@@ -283,13 +295,13 @@ export default {
                     }
                 }
                 this.clearTapTimeout()
-            } else { 
-                this.tapTimeout = setTimeout(() => { 
+            } else {
+                this.tapTimeout = setTimeout(() => {
                     console.log("tapTimeout !")
                     this.isLongPress = true
                     this.handleTouchStart(event)
                 }, 250)
- 
+
             }
 
             this.lastTapTime = currentTime
@@ -297,7 +309,7 @@ export default {
         handleTouchMove(event) {
             if (!this.isMobile()) return
             this.hasMove = true
-            
+
             this.clearTapTimeout()
 
             const deltaX = event.touches[0].clientX - this.touchStartX
@@ -316,24 +328,24 @@ export default {
             return !(this.isLongPress || this.hasMove)
         },
         handleTouchEnd() {
-            if(this.isClick()){
+            if (this.isClick()) {
                 this.toggleControl()
             }
-            if(this.showControls){
-                this.resetControlsTimeout();            
+            if (this.showControls) {
+                this.resetControlsTimeout();
             }
-            
+
 
             this.isLongPress = false //clear status
             this.hasMove = false
             //this.doubleClick = false
             this.clearTapTimeout()
-            
+
             if (this.isLoaded) {
                 const video = this.videoPlayer
                 if (video.playbackRate != 1) {//如果当前是进入的是 设置倍速播放的模式
                     video.playbackRate = 1
-                } else if(this.deltaX != 0) {
+                } else if (this.deltaX != 0) {
                     const jumpSeconds = Math.floor(this.deltaX / 10) * 1
                     video.currentTime = Math.max(0, Math.min(video.duration, video.currentTime + jumpSeconds))
                 }
@@ -342,19 +354,20 @@ export default {
             this.deltaX = 0
         },
         handleDoubleClick(event) {
-            if (this.isMobile())  return
-            
+            this.showSettings = false
+            if (this.isMobile()) return
+
             const video = this.videoPlayer
             const rect = video.getBoundingClientRect()
             const clickX = event.clientX - rect.left
             const width = rect.width
 
-            if(!this.isLoaded) return;
-            if(this.doubleClickBehavior == 'toggle') {
+            if (!this.isLoaded) return;
+            if (this.doubleClickBehavior == 'toggle') {
                 this.togglePlay()
                 return;
             }
-            
+
             if (clickX < width / 2) {
                 // 左半边双击：后退
                 video.currentTime = Math.max(0, video.currentTime - this.jumpSeconds)
@@ -370,19 +383,21 @@ export default {
             if (this.isMobile()) return
             this.isMouseDown = false
 
-            if(this.isLoaded){
-               this.videoPlayer.playbackRate = 1.0
-            }            
+            if (this.isLoaded) {
+                this.videoPlayer.playbackRate = 1.0
+            }
         },
         handleMouseDown(event) {
+            this.showSettings = false
+
             if (this.isMobile()) return
-            if (this.isLoaded){
+            if (this.isLoaded) {
                 this.videoPlayer.playbackRate = 2.0
             }
             this.isMouseDown = true
             this.toggleControl()
-            if(this.showControls){
-                this.resetControlsTimeout();            
+            if (this.showControls) {
+                this.resetControlsTimeout();
             }
         },
         handleMouseMove(event) {
@@ -393,19 +408,19 @@ export default {
             const speedDelta = deltaX * 0.01
 
             const video = this.videoPlayer
-            if(this.isLoaded){
+            if (this.isLoaded) {
                 video.playbackRate = Math.max(0.5, Math.min(4.0, video.playbackRate + speedDelta))
             }
         },
 
-        handleScrubHover(event) { 
+        handleScrubHover(event) {
             this.isHovering = true
-            
+
             const progressBar = event.currentTarget
             const rect = progressBar.getBoundingClientRect()
             const offsetX = event.clientX - rect.left
             const percent = offsetX / rect.width
-            
+
             const video = this.videoPlayer
             if (this.isLoaded) {
                 this.hoverTime = this.formatTime(video.duration * percent)
@@ -413,20 +428,20 @@ export default {
                 this.scrubPosition = percent * 100
             }
         },
-        
+
         handleScrubLeave() {
             this.isHovering = false
         },
-        
-        handleScrubClick(event) {   
-            
+
+        handleScrubClick(event) {
+
             const progressBar = event.currentTarget
             const rect = progressBar.getBoundingClientRect()
             const offsetX = event.clientX - rect.left
             const percent = offsetX / rect.width
-            
+
             const video = this.videoPlayer
-            if (this.isLoaded) { 
+            if (this.isLoaded) {
                 video.currentTime = video.duration * percent
             }
         },
@@ -439,16 +454,16 @@ export default {
 
         togglePlay() {
             const video = this.videoPlayer;
-            if(this.isLoaded){
+            if (this.isLoaded) {
                 if (video.paused) {
-                    video.play(); 
+                    video.play();
                 } else {
-                    video.pause();  
+                    video.pause();
                 }
             }
         },
         toggleControl() {
-            this.showControls = !this.showControls 
+            this.showControls = !this.showControls
         },
 
         updateProgress() {
@@ -471,9 +486,31 @@ export default {
             }, 3000);
         },
 
+        toggleFullscreen() {
+            const video = this.videoPlayer
+            video.style.width = '100vw';
+            video.style.height = '100vh'; 
+
+            if (!video.fullscreenElement) {
+                // 请求进入全屏模式
+                video.requestFullscreen();
+
+                // 锁定屏幕方向为横屏
+                screen.orientation.lock('landscape');
+                this.isFullscreen = true
+            } else {
+                if (document.exitFullscreen) {
+                    document.exitFullscreen();
+                }
+                // 解锁屏幕方向
+                screen.orientation.unlock();
+                this.isFullscreen = false
+            }
+        },
+
         async loadUrl() {
             if (!this.videoUrl) return
-            
+
             // 释放之前的URL
             if (this.fileUrl) {
                 URL.revokeObjectURL(this.fileUrl)
@@ -510,7 +547,7 @@ export default {
 
         getMimeTypeFromUrl(url) {
             const extension = url.split('.').pop().toLowerCase()
-            switch(extension) {
+            switch (extension) {
                 case 'mp4': return 'video/mp4'
                 case 'webm': return 'video/webm'
                 case 'ogg': return 'video/ogg'
@@ -523,15 +560,38 @@ export default {
 }
 </script>
 
-<style scoped>
-.video-player {
-    /* max-width: 800px; */
-    margin: 10px auto;
-    position: relative;
-    width: fit-content; 
+<style>
+:root {
+    --safe-area-bottom: 0px;
+    /* 默认值 */
 }
 
-video, audio {
+.video-container {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    /*但是安全区域 safe-area-inset-* 只有在ios中有  */
+    height: calc(100vh - var(--safe-area-bottom, 0));
+    margin: 0;
+    padding: 0;
+    /* overflow: auto; */
+}
+
+.video-player {
+    position: relative;
+    width: 100%;
+    height: 100%;
+}
+
+video {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
+video,
+audio {
     width: 100%;
     margin-bottom: 1rem;
 }
@@ -561,7 +621,7 @@ video, audio {
     padding: 12px;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
     z-index: 2;
-    min-width: 200px;
+    min-width: 300px;
 }
 
 .media-setting-item {
@@ -575,7 +635,7 @@ video, audio {
 }
 
 .media-setting-item input {
-    width: 60px;
+    width: 70px;
     padding: 4px;
     border-radius: 2px;
     border: 1px solid #666;
@@ -585,13 +645,12 @@ video, audio {
 
 .url-input {
     display: flex;
-    gap: 8px;
-    margin-top: 12px;
+    gap: 7px;
 }
 
 .url-input input {
     flex: 1;
-    padding: 8px;
+    padding: 3px;
     border-radius: 4px;
     border: 1px solid #666;
     background: #333;
@@ -599,7 +658,7 @@ video, audio {
 }
 
 .url-input button {
-    padding: 8px 16px;
+    padding: 3px 8px;
     border-radius: 4px;
     border: none;
     background: #007bff;
@@ -612,21 +671,24 @@ video, audio {
 }
 
 .custom-controls {
-    position: absolute;
-    bottom: 0;
+    /* position: absolute; */
+    /* bottom: var(--safe-area-bottom, 0); */
+    position: fixed;
+    bottom: var(--safe-area-bottom, 0);
     left: 0;
     right: 0;
     background: rgba(0, 0, 0, 0.7);
-    padding: 10px;
+    padding: 15px;
+    box-sizing: border-box;
     transition: opacity 0.3s;
 }
 
 
 .progress-bar {
     position: relative;
-    height: 4px;
+    height: 8px;
     background: #444;
-    margin-bottom: 8px;
+    margin-bottom: 12px;
     cursor: pointer;
 }
 
@@ -640,7 +702,7 @@ video, audio {
 
 .scrubber {
     position: absolute;
-    top: -4px;
+    top: -2px;
     width: 12px;
     height: 12px;
     background: #fff;
@@ -654,7 +716,7 @@ video, audio {
     transform: translateX(-50%) scale(1.2);
 }
 
-.srubber-time-tooltip{
+.srubber-time-tooltip {
     color: white;
 }
 
@@ -663,10 +725,27 @@ video, audio {
     align-items: center;
     justify-content: space-between;
 }
+.control-buttons .padding {
+    flex: 1 1 auto;
+}
 
 .time-display {
     color: #fff;
     font-size: 14px;
     margin-left: 10px;
+    margin-right: 10px;
+}
+
+.fullscreen-btn { 
+    background: none;
+    border: none;
+    color: #fff;
+    font-size: 18px;
+    cursor: pointer;
+    padding: 0 8px;
+}
+
+.fullscreen-btn:hover {
+    color: #007bff;
 }
 </style>
