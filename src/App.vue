@@ -8,7 +8,7 @@ import VideoPlayer from './components/VideoPlayer.vue'
     <a href="#https://vitejs.dev" >
       <img src="/vite.svg" class="logo" alt="Vite logo" />
     </a>
-    <a href="#https://vuejs.org/" @click="sendMessage">
+    <a href="#https://vuejs.org/" @click.prevent="sendMessage">
       <img src="./assets/vue.svg" class="logo vue" alt="Vue logo" />
     </a>
   </div>

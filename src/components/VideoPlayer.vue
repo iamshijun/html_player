@@ -1,6 +1,6 @@
 <template>
     <div class="video-player">
-        <video ref="videoPlayer" controls 
+        <video ref="videoPlayer"
             @loadedmetadata="onLoadedMetadata"
             @ended="onPlayPausedEnded"
             @pause="onPlayPausedEnded"
@@ -19,10 +19,45 @@
             <source :src="fileUrl" :type="mimeType">
             您的浏览器不支持视频播放
         </video>
+        
+        <!-- Custom Controls -->
+        <div class="custom-controls" v-show="showControls">
+            <div class="progress-bar"
+                @mousemove="handleScrubHover"
+                @mouseleave="handleScrubLeave"
+                @click="handleScrubClick"
+                >
+                <div class="progress" :style="{ width: progress + '%' }"></div>
+                <div class="scrubber"
+                    v-show="isScrubbing || isHovering"
+                    :style="{ left: scrubPosition + '%' }"></div>
+                <div class="srubber-time-tooltip" 
+                    v-show="isHovering"
+                    :style="{ left: scrubPosition + 'px' }">
+                    {{ hoverTime }}
+                </div>
+            </div>
+            <div class="control-buttons">
+                <button @click="togglePlay">
+                    {{ isPlaying ? '❚❚' : '▶' }}
+                </button>
+                <span class="time-display">
+                    {{ currentTime }} / {{ duration }}
+                </span>
+            </div>
+        </div>
+        
         <div class="media-settings-menu" v-if="showSettings">
             <div class="media-setting-item">
                 <label>双击跳转秒数：</label>
                 <input type="number" v-model.number="jumpSeconds" min="1" max="60">
+            </div>
+            <div class="media-setting-item">
+                <label>双击行为：</label>
+                <select v-model="doubleClickBehavior">
+                    <option value="seek">快进/后退</option>
+                    <option value="toggle">停止/播放</option>
+                </select>
             </div>
         </div>
         <div class="media-settings-icon" @click="toggleSettings">
@@ -43,39 +78,57 @@ import '/src/backport.js'
 
 export default {
     props : {
-        eventbus: {
-            type:String,
+        eventbus: { 
             required:false
         }
     },
     watch: { 
         eventbus(newValue,oldValue) {
-            console.log(newValue,oldValue)
             if(this.isLoaded){
                 const video = this.videoPlayer
                 if(video.paused || video.ended){
                     video.play()
                 }else{
-                    vide.pause()
+                    video.pause()
                 }
             }
         } 
     },
     data() {
         return {
-            fileUrl: '',
+            fileUrl: '',//选择的本地系统文件
+            videoUrl: '', // URL输入
+           
             mimeType: '',
-            isLoaded: false,
+            isLoaded: false,//媒体文件是否加载完成
             isVideo: true,
+            /* 用户motion动作信息记录 */
             isMouseDown: false,
+            isLongPress : false,
+            hasMove : false,
             lastTapTime: 0,
             tapTimeout: null,
             touchStartX: 0,
             deltaX: 0,
+
             noSleep: null,
+
             showSettings: false,
             jumpSeconds: 5, // 默认跳转秒数
-            videoUrl: '' // URL输入
+            doubleClickBehavior: 'toggle', // 双击行为：seek-快进后退，toggle-停止播放
+
+           
+            showControls: false,
+            isPlaying: false,
+            progress: 0,
+            currentTime: '00:00',
+            duration: '00:00',
+            isScrubbing: false,
+            scrubPosition: 0,
+            isHovering: false,
+            hoverTime: '00:00',
+            tooltipPosition: 0,
+            controlsTimeout: null //hideControl timeout
         }
     },
     setup() {
@@ -85,8 +138,13 @@ export default {
         }
     },
     mounted() {
+        const video = this.videoPlayer;
+        
+        // Initialize controls
+        video.addEventListener('timeupdate', this.updateProgress);
+        
         if (this.isMobile()) {
-            this.noSleep = new NoSleep()
+            this.noSleep = new NoSleep();
         }
     },
     beforeDestroy() {
@@ -103,16 +161,17 @@ export default {
             this.isLoaded = true;
         },
         onPlayStarted() {
-            console.log('play started')
             // 启用防止屏幕关闭
             if (this.noSleep) {
                 this.noSleep.enable()
             }
+            this.isPlaying = true
         },
-        onPlayPausedEnded() {
+        onPlayPausedEnded() { 
             if (this.noSleep) {
                 this.noSleep.disable()
             }
+            this.isPlaying = false
         },
         async handleFileChange(event) {
             const file = event.target.files[0]
@@ -177,52 +236,70 @@ export default {
                 clearTimeout(this.tapTimeout)
             }
         },
-        handleTouchStart(event, longPress = false) {
-            if (!this.isMobile()) {
-                return
+
+        handleTouchStart(event) {
+            if (!this.isMobile()) return 
+
+            if (this.controlsTimeout) {
+                clearTimeout(this.controlsTimeout);
             }
+
             this.showSettings = false
             this.touchStartX = event.touches[0].clientX
 
             // 双击检测
             const currentTime = new Date().getTime()
             const tapLength = currentTime - this.lastTapTime
-            const doubleClick = tapLength < 300 && tapLength > 0
+            const doubleClick = tapLength < 200 && tapLength > 0
 
+            const longPress = this.isLongPress
+            //console.log("tapLength",tapLength)
+       
+            if (doubleClick || longPress) { 
+                if(doubleClick && this.doubleClickBehavior == 'toggle') {
+                    console.log("doubleClick togglePlay",tapLength)
+                    this.togglePlay()
+                }else{
+                    const video = this.videoPlayer
+                
+                    const rect = video.getBoundingClientRect()
+                    const touchX = this.touchStartX - rect.left
+                    const width = rect.width
 
-            if (doubleClick || longPress) {
-                const video = this.videoPlayer
-                const rect = video.getBoundingClientRect()
-                const touchX = this.touchStartX - rect.left
-                const width = rect.width
-
-                if (touchX < width / 2) {//left
-                    if (longPress) {
-                        video.playbackRate = 0.8
-                    } else {
-                        video.currentTime = Math.max(0, video.currentTime - this.jumpSeconds)
-                    }
-                } else {//right
-                    if (longPress) {
-                        video.playbackRate = 2.5
-                    } else {
-                        video.currentTime = Math.min(video.duration, video.currentTime + this.jumpSeconds)
+                    if(this.isLoaded){
+                        if (touchX < width / 2) {//left
+                            if (longPress) {
+                                video.playbackRate = 0.8
+                            } else {
+                                video.currentTime = Math.max(0, video.currentTime - this.jumpSeconds)
+                            }
+                        } else {//right
+                            if (longPress) {
+                                video.playbackRate = 2.5
+                            } else {
+                                video.currentTime = Math.min(video.duration, video.currentTime + this.jumpSeconds)
+                            }
+                        }
                     }
                 }
                 this.clearTapTimeout()
-            } else {
-                this.tapTimeout = setTimeout(() => {
-                    this.handleTouchStart(event, true)
-                }, 300)
+            } else { 
+                this.tapTimeout = setTimeout(() => { 
+                    console.log("tapTimeout !")
+                    this.isLongPress = true
+                    this.handleTouchStart(event)
+                }, 250)
+ 
             }
 
             this.lastTapTime = currentTime
         },
         handleTouchMove(event) {
-            if (!this.isMobile()) {
-                return
-            }
+            if (!this.isMobile()) return
+            this.hasMove = true
+            
             this.clearTapTimeout()
+
             const deltaX = event.touches[0].clientX - this.touchStartX
             const video = this.videoPlayer
 
@@ -235,8 +312,23 @@ export default {
                 }
             }
         },
+        isClick() {
+            return !(this.isLongPress || this.hasMove)
+        },
         handleTouchEnd() {
+            if(this.isClick()){
+                this.toggleControl()
+            }
+            if(this.showControls){
+                this.resetControlsTimeout();            
+            }
+            
+
+            this.isLongPress = false //clear status
+            this.hasMove = false
+            //this.doubleClick = false
             this.clearTapTimeout()
+            
             if (this.isLoaded) {
                 const video = this.videoPlayer
                 if (video.playbackRate != 1) {//如果当前是进入的是 设置倍速播放的模式
@@ -250,23 +342,25 @@ export default {
             this.deltaX = 0
         },
         handleDoubleClick(event) {
-            if (this.isMobile()) {
-                return
-            }
+            if (this.isMobile())  return
             
             const video = this.videoPlayer
             const rect = video.getBoundingClientRect()
             const clickX = event.clientX - rect.left
             const width = rect.width
 
-            if(this.isLoaded){
-                if (clickX < width / 2) {
-                    // 左半边双击：后退
-                    video.currentTime = Math.max(0, video.currentTime - this.jumpSeconds)
-                } else {
-                    // 右半边双击：快进
-                    video.currentTime = Math.min(video.duration, video.currentTime + this.jumpSeconds)
-                }
+            if(!this.isLoaded) return;
+            if(this.doubleClickBehavior == 'toggle') {
+                this.togglePlay()
+                return;
+            }
+            
+            if (clickX < width / 2) {
+                // 左半边双击：后退
+                video.currentTime = Math.max(0, video.currentTime - this.jumpSeconds)
+            } else {
+                // 右半边双击：快进
+                video.currentTime = Math.min(video.duration, video.currentTime + this.jumpSeconds)
             }
         },
         handleMouseLeave() {
@@ -282,23 +376,99 @@ export default {
         },
         handleMouseDown(event) {
             if (this.isMobile()) return
-            
-            this.videoPlayer.playbackRate = 2.0
+            if (this.isLoaded){
+                this.videoPlayer.playbackRate = 2.0
+            }
             this.isMouseDown = true
+            this.toggleControl()
+            if(this.showControls){
+                this.resetControlsTimeout();            
+            }
         },
         handleMouseMove(event) {
             if (this.isMobile()) return
             if (!this.isMouseDown) return
 
             const deltaX = event.movementX
-            //const direction = deltaX > 0 ? 'right' : 'left'
-            //console.log(`Mouse moving ${direction}`)
             const speedDelta = deltaX * 0.01
 
             const video = this.videoPlayer
             if(this.isLoaded){
                 video.playbackRate = Math.max(0.5, Math.min(4.0, video.playbackRate + speedDelta))
             }
+        },
+
+        handleScrubHover(event) { 
+            this.isHovering = true
+            
+            const progressBar = event.currentTarget
+            const rect = progressBar.getBoundingClientRect()
+            const offsetX = event.clientX - rect.left
+            const percent = offsetX / rect.width
+            
+            const video = this.videoPlayer
+            if (this.isLoaded) {
+                this.hoverTime = this.formatTime(video.duration * percent)
+                this.tooltipPosition = offsetX
+                this.scrubPosition = percent * 100
+            }
+        },
+        
+        handleScrubLeave() {
+            this.isHovering = false
+        },
+        
+        handleScrubClick(event) {   
+            
+            const progressBar = event.currentTarget
+            const rect = progressBar.getBoundingClientRect()
+            const offsetX = event.clientX - rect.left
+            const percent = offsetX / rect.width
+            
+            const video = this.videoPlayer
+            if (this.isLoaded) { 
+                video.currentTime = video.duration * percent
+            }
+        },
+
+        formatTime(seconds) {
+            const minutes = Math.floor(seconds / 60);
+            const secs = Math.floor(seconds % 60);
+            return `${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+        },
+
+        togglePlay() {
+            const video = this.videoPlayer;
+            if(this.isLoaded){
+                if (video.paused) {
+                    video.play(); 
+                } else {
+                    video.pause();  
+                }
+            }
+        },
+        toggleControl() {
+            this.showControls = !this.showControls 
+        },
+
+        updateProgress() {
+            const video = this.videoPlayer;
+            this.progress = (video.currentTime / video.duration) * 100;
+            this.currentTime = this.formatTime(video.currentTime);
+            this.duration = this.formatTime(video.duration);
+            //this.scrubPosition = this.progress
+        },
+
+
+        resetControlsTimeout() {
+            console.log("reset control hidden timeout")
+            if (this.controlsTimeout) {
+                clearTimeout(this.controlsTimeout);
+            }
+            this.controlsTimeout = setTimeout(() => {
+                console.log("hide automatically")
+                this.showControls = false;
+            }, 3000);
         },
 
         async loadUrl() {
@@ -356,8 +526,9 @@ export default {
 <style scoped>
 .video-player {
     /* max-width: 800px; */
-    margin: 0 auto;
+    margin: 10px auto;
     position: relative;
+    width: fit-content; 
 }
 
 video, audio {
@@ -438,5 +609,64 @@ video, audio {
 
 .url-input button:hover {
     background: #0056b3;
+}
+
+.custom-controls {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: rgba(0, 0, 0, 0.7);
+    padding: 10px;
+    transition: opacity 0.3s;
+}
+
+
+.progress-bar {
+    position: relative;
+    height: 4px;
+    background: #444;
+    margin-bottom: 8px;
+    cursor: pointer;
+}
+
+.progress {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 100%;
+    background: #007bff;
+}
+
+.scrubber {
+    position: absolute;
+    top: -4px;
+    width: 12px;
+    height: 12px;
+    background: #fff;
+    border-radius: 50%;
+    transform: translateX(-50%);
+    transition: transform 0.1s ease, width 0.1s ease, height 0.1s ease;
+    cursor: pointer;
+}
+
+.scrubber:hover {
+    transform: translateX(-50%) scale(1.2);
+}
+
+.srubber-time-tooltip{
+    color: white;
+}
+
+.control-buttons {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.time-display {
+    color: #fff;
+    font-size: 14px;
+    margin-left: 10px;
 }
 </style>
