@@ -12,12 +12,11 @@
                 @mouseup="handleMouseUp"
                 @mouseleave="handleMouseLeave"
                 @mousemove="handleMouseMove($event)"
-                @touchstart.prevent="handleTouchStart($event)"
-                @touchmove.prevent="handleTouchMove($event)" 
-                @touchend="handleTouchEnd"
-                controls="false"
-                >
 
+                @touchstart="handleTouchStart($event)"
+                @touchmove="handleTouchMove($event)" 
+                @touchend="handleTouchEnd"
+                >
                 <source :src="fileUrl" :type="mimeType">
                 您的浏览器不支持视频播放
             </video>
@@ -80,7 +79,6 @@
 <script>
 import NoSleep from 'nosleep.js';
 import { ref } from 'vue';
-import '/src/backport.js'
 
 function adjustSafeArea() {
     const windowHeight = window.innerHeight;
@@ -309,6 +307,7 @@ export default {
         handleTouchMove(event) {
             if (!this.isMobile()) return
             this.hasMove = true
+            this.isHovering = true
 
             this.clearTapTimeout()
 
@@ -321,6 +320,8 @@ export default {
                     video.playbackRate = Math.max(0.5, Math.min(4.0, video.playbackRate + speedDelta))
                 } else {
                     this.deltaX = deltaX
+                    const jumpSeconds = Math.floor(this.deltaX / 10) * 1
+                    this.hoverTime = this.formatTime(Math.max(0, Math.min(video.duration, video.currentTime + jumpSeconds)))
                 }
             }
         },
@@ -335,7 +336,7 @@ export default {
                 this.resetControlsTimeout();
             }
 
-
+            this.isHovering = false
             this.isLongPress = false //clear status
             this.hasMove = false
             //this.doubleClick = false
