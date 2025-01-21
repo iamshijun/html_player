@@ -1,8 +1,9 @@
 <script setup>
-import VideoPlayer from './components/VideoPlayer.vue'
+import HtmlVideoPlayer from './components/HtmlVideoPlayer.vue'
+import DLNAPlayer from './components/DLNAPlayer.vue';
 </script>
 
 <template>
-  <VideoPlayer/>
+  <HtmlVideoPlayer/>
 </template>
  

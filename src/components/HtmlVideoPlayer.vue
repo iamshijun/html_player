@@ -33,7 +33,7 @@
                     </div>
                 </div>
                 <div class="control-buttons">
-                    <button @click="togglePlay">
+                    <button @click="togglePlay()">
                         {{ isPlaying ? '❚❚' : '▶' }}
                     </button>
                     <span class="padding"></span>
@@ -76,31 +76,19 @@
     </div>
 </template>
 
-<script>
-import NoSleep from 'nosleep.js';
+<script lang="ts">
+import NoSleep from 'nosleep.js'; 
 import { ref } from 'vue';
 
-function adjustSafeArea() {
-    const windowHeight = window.innerHeight;
-    const documentHeight = document.documentElement.clientHeight;
-    const safeAreaBottom = Math.max(0, windowHeight - documentHeight);
-    console.log(`windowHeight:${windowHeight} , documentHeight:${documentHeight}, safeAreaBottom:${safeAreaBottom}`)
-    document.documentElement.style.setProperty('--safe-area-bottom', `${safeAreaBottom}px`);
-}
+// function adjustSafeArea() {
+//     const windowHeight = window.innerHeight;
+//     const documentHeight = document.documentElement.clientHeight;
+//     const safeAreaBottom = Math.max(0, windowHeight - documentHeight);
+//     console.log(`windowHeight:${windowHeight} , documentHeight:${documentHeight}, safeAreaBottom:${safeAreaBottom}`)
+//     document.documentElement.style.setProperty('--safe-area-bottom', `${safeAreaBottom}px`);
+// }
 
 export default {
-    watch: {
-        eventbus(newValue, oldValue) {
-            if (this.isLoaded) {
-                const video = this.videoPlayer
-                if (video.paused || video.ended) {
-                    video.play()
-                } else {
-                    video.pause()
-                }
-            }
-        }
-    },
     data() {
         return {
             fileUrl: '',//选择的本地系统文件
@@ -114,11 +102,11 @@ export default {
             isLongPress: false,
             hasMove: false,
             lastTapTime: 0,
-            tapTimeout: null,
+            tapTimeout: null as number | null,
             touchStartX: 0,
             deltaX: 0,
 
-            noSleep: null,
+            noSleep: null as NoSleep|null,
 
             showSettings: false,
             jumpSeconds: 5, // 默认跳转秒数
@@ -134,12 +122,12 @@ export default {
             isHovering: false,
             hoverTime: '00:00',
             tooltipPosition: 0,
-            controlsTimeout: null, //hideControl timeout
+            controlsTimeout: null as number|null, //hideControl timeout
             isFullscreen: false
         }
     },
     setup() {
-        const videoPlayer = ref(null)
+        const videoPlayer = ref<HTMLVideoElement|undefined>(undefined)
         return {
             videoPlayer
         }
@@ -147,7 +135,8 @@ export default {
     mounted() {
         // adjustSafeArea()
         const video = this.videoPlayer;
-
+        if(video == null)
+            return
         // Initialize controls
         video.addEventListener('timeupdate', this.updateProgress);
         // video.addEventListener('fullscreenchange', function() {
@@ -182,8 +171,10 @@ export default {
             }
             this.isPlaying = false
         },
-        async handleFileChange(event) {
-            const file = event.target.files[0]
+        async handleFileChange(event:Event) {
+            const target = event.target as HTMLInputElement
+          
+            const file = target?.files?.[0]
             if (!file) return
 
             // 释放之前的URL
@@ -204,12 +195,15 @@ export default {
                 const reader = new FileReader()
 
                 // 等待文件读取完成
-                const fileData = await new Promise((resolve, reject) => {
+                const fileData = await new Promise<string | ArrayBuffer | null>((resolve, reject) => {
                     reader.onload = () => resolve(reader.result)
                     reader.onerror = reject
                     reader.readAsArrayBuffer(file)
                 })
-
+                if(fileData == null){
+                    alert("读取文件失败")
+                    return
+                }
                 // 创建Blob URL
                 const blob = new Blob([fileData], { type: file.type })
                 this.fileUrl = URL.createObjectURL(blob)
@@ -217,6 +211,7 @@ export default {
 
                 // 确保视频元素加载完成
                 const video = this.videoPlayer
+                if(!video) return
                 video.src = this.fileUrl
                 video.load()
 
@@ -226,7 +221,7 @@ export default {
                     video.onerror = (err) => {
                         console.error('媒体加载失败:', err)
                         alert('无法播放此文件')
-                        resolve()
+                        resolve(true)
                     }
                 })
 
@@ -246,7 +241,7 @@ export default {
             }
         },
 
-        handleTouchStart(event) {
+        handleTouchStart(event:TouchEvent) {
             this.showSettings = false
             if (!this.isMobile()) return
 
@@ -259,52 +254,55 @@ export default {
 
             // 双击检测
             const currentTime = new Date().getTime()
+
             const tapLength = currentTime - this.lastTapTime
             const doubleClick = tapLength < 200 && tapLength > 0
-
-            const longPress = this.isLongPress
-            //console.log("tapLength",tapLength)
+            const longPress = this.isLongPress 
 
             if (doubleClick || longPress) {
-                if (doubleClick && this.doubleClickBehavior == 'toggle') {
-                    console.log("doubleClick togglePlay", tapLength)
-                    this.togglePlay()
-                } else {
-                    const video = this.videoPlayer
+                const video = this.videoPlayer
+                if(!video) {
+                    return
+                }
+                const rect = video.getBoundingClientRect()
+                const touchX = this.touchStartX - rect.left
+                const width = rect.width
 
-                    const rect = video.getBoundingClientRect()
-                    const touchX = this.touchStartX - rect.left
-                    const width = rect.width
-
-                    if (this.isLoaded) {
-                        if (touchX < width / 2) {//left
-                            if (longPress) {
-                                video.playbackRate = 0.8
-                            } else {
-                                video.currentTime = Math.max(0, video.currentTime - this.jumpSeconds)
-                            }
-                        } else {//right
-                            if (longPress) {
-                                video.playbackRate = 2.5
-                            } else {
-                                video.currentTime = Math.min(video.duration, video.currentTime + this.jumpSeconds)
-                            }
-                        }
+                if (!this.isLoaded){
+                    return
+                }
+                const toggle = doubleClick && this.doubleClickBehavior == 'toggle'
+                if (touchX < width / 2) {//left
+                    if(toggle) {
+                        this.togglePlay()
+                    }else if (longPress) {
+                        video.playbackRate = 0.8
+                    } else {
+                        video.currentTime = Math.max(0, video.currentTime - this.jumpSeconds)
+                    }
+                } else {//right
+                    if(toggle) {
+                        this.togglePlay()
+                    }else if (longPress) {
+                        video.playbackRate = 2.5
+                    } else {
+                        video.currentTime = Math.min(video.duration, video.currentTime + this.jumpSeconds)
                     }
                 }
+                
                 this.clearTapTimeout()
             } else {
                 this.tapTimeout = setTimeout(() => {
                     console.log("tapTimeout !")
                     this.isLongPress = true
                     this.handleTouchStart(event)
-                }, 250)
+                }, 250, null)
 
             }
 
             this.lastTapTime = currentTime
         },
-        handleTouchMove(event) {
+        handleTouchMove(event:TouchEvent) {
             if (!this.isMobile()) return
             this.hasMove = true
             this.isHovering = true
@@ -314,7 +312,7 @@ export default {
             const deltaX = event.touches[0].clientX - this.touchStartX
             const video = this.videoPlayer
 
-            if (this.isLoaded) {
+            if (video && this.isLoaded) {
                 if (video.playbackRate != 1) {
                     const speedDelta = deltaX * 0.01
                     video.playbackRate = Math.max(0.5, Math.min(4.0, video.playbackRate + speedDelta))
@@ -342,8 +340,8 @@ export default {
             //this.doubleClick = false
             this.clearTapTimeout()
 
-            if (this.isLoaded) {
-                const video = this.videoPlayer
+            const video = this.videoPlayer
+            if (video && this.isLoaded) {
                 if (video.playbackRate != 1) {//如果当前是进入的是 设置倍速播放的模式
                     video.playbackRate = 1
                 } else if (this.deltaX != 0) {
@@ -354,11 +352,14 @@ export default {
             this.touchStartX = 0 //reset tap startX
             this.deltaX = 0
         },
-        handleDoubleClick(event) {
+        handleDoubleClick(event:MouseEvent) {
             this.showSettings = false
             if (this.isMobile()) return
 
             const video = this.videoPlayer
+            if(!video){
+                return
+            }
             const rect = video.getBoundingClientRect()
             const clickX = event.clientX - rect.left
             const width = rect.width
@@ -384,15 +385,15 @@ export default {
             if (this.isMobile()) return
             this.isMouseDown = false
 
-            if (this.isLoaded) {
+            if (this.videoPlayer && this.isLoaded) {
                 this.videoPlayer.playbackRate = 1.0
             }
         },
-        handleMouseDown(event) {
+        handleMouseDown() {
             this.showSettings = false
 
             if (this.isMobile()) return
-            if (this.isLoaded) {
+            if (this.videoPlayer && this.isLoaded) {
                 this.videoPlayer.playbackRate = 2.0
             }
             this.isMouseDown = true
@@ -401,7 +402,7 @@ export default {
                 this.resetControlsTimeout();
             }
         },
-        handleMouseMove(event) {
+        handleMouseMove(event:MouseEvent) {
             if (this.isMobile()) return
             if (!this.isMouseDown) return
 
@@ -409,21 +410,21 @@ export default {
             const speedDelta = deltaX * 0.01
 
             const video = this.videoPlayer
-            if (this.isLoaded) {
+            if (video && this.isLoaded) {
                 video.playbackRate = Math.max(0.5, Math.min(4.0, video.playbackRate + speedDelta))
             }
         },
 
-        handleScrubHover(event) {
+        handleScrubHover(event:MouseEvent) {
             this.isHovering = true
 
-            const progressBar = event.currentTarget
+            const progressBar = event.currentTarget as HTMLElement
             const rect = progressBar.getBoundingClientRect()
             const offsetX = event.clientX - rect.left
             const percent = offsetX / rect.width
 
             const video = this.videoPlayer
-            if (this.isLoaded) {
+            if (video && this.isLoaded) {
                 this.hoverTime = this.formatTime(video.duration * percent)
                 this.tooltipPosition = offsetX
                 this.scrubPosition = percent * 100
@@ -434,32 +435,38 @@ export default {
             this.isHovering = false
         },
 
-        handleScrubClick(event) {
+        handleScrubClick(event:MouseEvent) {
 
-            const progressBar = event.currentTarget
+            const progressBar = event.currentTarget as HTMLElement
             const rect = progressBar.getBoundingClientRect()
             const offsetX = event.clientX - rect.left
             const percent = offsetX / rect.width
 
             const video = this.videoPlayer
-            if (this.isLoaded) {
+            if (video && this.isLoaded) {
                 video.currentTime = video.duration * percent
             }
         },
 
-        formatTime(seconds) {
+        formatTime(seconds: number) {
             const minutes = Math.floor(seconds / 60);
             const secs = Math.floor(seconds % 60);
             return `${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
         },
 
-        togglePlay() {
+        togglePlay() {    
             const video = this.videoPlayer;
-            if (this.isLoaded) {
+            if (video && this.isLoaded) {
                 if (video.paused) {
                     video.play();
                 } else {
                     video.pause();
+                }
+                const time = video.currentTime
+                if(this.isFullscreen){ //因为全屏模式下默认的控制条又出来,并且双击还是跳转+10秒，这里恢复一下
+                    setTimeout(() => {
+                        video.currentTime = time
+                    },100, undefined)
                 }
             }
         },
@@ -469,36 +476,41 @@ export default {
 
         updateProgress() {
             const video = this.videoPlayer;
-            this.progress = (video.currentTime / video.duration) * 100;
-            this.currentTime = this.formatTime(video.currentTime);
-            this.duration = this.formatTime(video.duration);
-            //this.scrubPosition = this.progress
+            if(video){
+                this.progress = (video.currentTime / video.duration) * 100;
+                this.currentTime = this.formatTime(video.currentTime);
+                this.duration = this.formatTime(video.duration);
+                //this.scrubPosition = this.progress
+            }
         },
 
 
-        resetControlsTimeout() {
-            console.log("reset control hidden timeout")
+        resetControlsTimeout() { 
             if (this.controlsTimeout) {
                 clearTimeout(this.controlsTimeout);
             }
             this.controlsTimeout = setTimeout(() => {
-                console.log("hide automatically")
                 this.showControls = false;
-            }, 3000);
+            }, 3000, undefined);
         },
 
-        toggleFullscreen() {
+        async toggleFullscreen() {
             const video = this.videoPlayer
+            if(!video){
+                return
+            }
             video.style.width = '100vw';
             video.style.height = '100vh'; 
 
-            if (!video.fullscreenElement) {
+            if (!document.fullscreenElement) {
                 // 请求进入全屏模式
                 video.requestFullscreen();
 
-                // 锁定屏幕方向为横屏
-                screen.orientation.lock('landscape');
                 this.isFullscreen = true
+                // 锁定屏幕方向为横屏
+                if (screen.orientation && screen.orientation.lock) {
+                    await screen.orientation.lock('landscape');
+                }
             } else {
                 if (document.exitFullscreen) {
                     document.exitFullscreen();
@@ -520,11 +532,13 @@ export default {
             try {
                 // 设置新的URL
                 this.fileUrl = this.videoUrl
-                this.mimeType = this.getMimeTypeFromUrl(this.videoUrl)
-                console.log(this.mimeType)
+                this.mimeType = this.getMimeTypeFromUrl(this.videoUrl) 
 
                 // 确保视频元素加载完成
                 const video = this.videoPlayer
+                if(!video){
+                    return
+                }
                 video.src = this.fileUrl
                 video.load()
 
@@ -534,7 +548,7 @@ export default {
                     video.onerror = (err) => {
                         console.error('媒体加载失败:', err)
                         alert('无法播放此URL')
-                        resolve()
+                        resolve(true)
                     }
                 })
 
@@ -546,8 +560,8 @@ export default {
             }
         },
 
-        getMimeTypeFromUrl(url) {
-            const extension = url.split('.').pop().toLowerCase()
+        getMimeTypeFromUrl(url:string) {
+            const extension = url.split('.').pop()?.toLowerCase()
             switch (extension) {
                 case 'mp4': return 'video/mp4'
                 case 'webm': return 'video/webm'

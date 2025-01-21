@@ -6,15 +6,25 @@
   "scripts": {
     "dev": "vite --host",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "type-check": "vue-tsc --noEmit"
   },
   "dependencies": {
     "@kyvg/vue3-notification": "^3.4.1",
+    "@stomp/stompjs": "^7.0.0",
+    "axios": "^1.7.9",
+    "fast-xml-parser": "^4.5.1",
     "nosleep.js": "^0.12.0",
+    "sockjs-client": "^1.6.1",
     "vue": "^3.5.13"
   },
   "devDependencies": {
+    "@types/node": "^22.10.7",
+    "@types/sockjs-client": "^1.5.4",
     "@vitejs/plugin-vue": "^5.2.1",
-    "vite": "^6.0.5"
+    "@vue/tsconfig": "^0.7.0",
+    "typescript": "^5.7.3",
+    "vite": "^6.0.5",
+    "vue-tsc": "^2.2.0"
   }
 }
