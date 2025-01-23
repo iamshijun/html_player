@@ -1,38 +1,61 @@
+import axios, { AxiosInstance } from 'axios';
 import WebSocketClient from '../utils/websocket';
 
 export class DLNAService {
-    private ws: WebSocketClient;
+    private ws: WebSocketClient
+    private controlURL : string
+    private dlnaServerHostname : string
+    private dlnaApi : AxiosInstance
+    constructor(apiUrl:string, controlURL: string) {
+        this.controlURL = controlURL
+        this.dlnaServerHostname = new URL(controlURL).hostname
+        this.ws = new WebSocketClient(apiUrl + '/ws');
 
-    constructor() {
-        this.ws = new WebSocketClient('ws://your-server-url/dlna');
-        this.ws.connect();
+        this.dlnaApi = axios.create({
+            baseURL: apiUrl
+        })
+    }
+    async connect () {
+        await this.ws.connect();
+    }
+    disconnect() {
+        this.ws.disconnect();
     }
 
-    play(): void {
-        this.ws.send('/app/dlna/play', {});
+    async play() {
+        return this.dlnaApi.post('/dlna/play', { controlURL:this.controlURL  })
     }
 
-    pause(): void {
-        this.ws.send('/app/dlna/pause', {});
+    async pause() {
+        return this.dlnaApi.post('/dlna/pause', { controlURL:this.controlURL  })
     }
 
-    stop(): void {
-        this.ws.send('/app/dlna/stop', {});
+    async stop() {
+        return this.dlnaApi.post('/dlna/stop', { controlURL:this.controlURL  })
     }
 
-    seek(position: number): void {
-        this.ws.send('/app/dlna/seek', { position });
+    async getPositionInfo() {
+        return this.dlnaApi.get(`/dlna/getPositionInfo?controlURL=${this.controlURL}`);
     }
 
-    subscribeProgress(callback: (data: any) => void): void {
-        this.ws.subscribe('/topic/progress', callback);
+    async seek(position: string) {
+        return this.dlnaApi.post('/dlna/seek', {
+             controlURL: this.controlURL,
+             params: {
+                position
+             } 
+        });
     }
 
-    subscribeMediaInfo(callback: (data: any) => void): void {
-        this.ws.subscribe('/topic/mediaInfo', callback);
-    }
+    // subscribeProgress(callback: (data: any) => void): void {
+    //     this.ws.subscribe('/topic/progress', callback);
+    // }
+
+    // subscribeMediaInfo(callback: (data: any) => void): void {
+    //     this.ws.subscribe('/topic/mediaInfo', callback);
+    // }
 
     subscribePlaybackState(callback: (data: any) => void): void {
-        this.ws.subscribe('/topic/playbackState', callback);
+        this.ws.subscribe(`/topic/upnp/event/AVTransport/${this.dlnaServerHostname}`, callback);
     }
 }

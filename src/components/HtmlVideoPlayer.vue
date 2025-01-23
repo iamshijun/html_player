@@ -89,6 +89,22 @@ import { ref } from 'vue';
 // }
 
 export default {
+    props :{
+        playUrl: {
+            type:[String ,null] ,
+            required: false
+        }
+    },
+    watch : {
+        playUrl (newValue,_oldValue) {
+            const video = this.videoPlayer;
+            if(video == null){
+                return 
+            }
+            video.src = newValue
+            video.load()
+        }
+    },
     data() {
         return {
             fileUrl: '',//选择的本地系统文件
@@ -135,9 +151,9 @@ export default {
     mounted() {
         // adjustSafeArea()
         const video = this.videoPlayer;
-        if(video == null)
-            return
+        if(video == null) return
         // Initialize controls
+       
         video.addEventListener('timeupdate', this.updateProgress);
         // video.addEventListener('fullscreenchange', function() {
         // });
@@ -575,7 +591,7 @@ export default {
 }
 </script>
 
-<style>
+<style scoped>
 :root {
     --safe-area-bottom: 0px;
     /* 默认值 */

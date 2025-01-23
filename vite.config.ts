@@ -9,5 +9,8 @@ export default defineConfig({
     alias: {
       '@': resolve(__dirname, 'src')
     }
-  }
+  },
+  define: {//polyfill
+      global: 'window', // 将 global 定义为 window
+  },
 })
