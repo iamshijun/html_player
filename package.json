@@ -15,7 +15,6 @@
     "axios": "^1.7.9",
     "dplayer": "^1.27.1",
     "fast-xml-parser": "^4.5.1",
-    "flv.js": "^1.6.2",
     "hls.js": "^1.5.20",
     "nosleep.js": "^0.12.0",
     "sockjs-client": "^1.6.1",
@@ -25,8 +24,10 @@
     "@types/dplayer": "^1.25.5",
     "@types/node": "^22.10.7",
     "@types/sockjs-client": "^1.5.4",
+    "@types/web": "^0.0.198",
     "@vitejs/plugin-vue": "^5.2.1",
     "@vue/tsconfig": "^0.7.0",
+    "flv.js": "^1.6.2",
     "typescript": "^5.7.3",
     "vite": "^6.0.5",
     "vue-tsc": "^2.2.0"

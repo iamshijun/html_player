@@ -30,8 +30,8 @@
                 <button @click="stop" :disabled="playState =='STOPPED' ">停止</button>
                 <input type="range" v-model="volume" @change="setVolume" min="0" max="100" />
             </div>
-            <div style="margin:10px;" ref="dplayerContainer" class="dplayer">
-                <video controls ref="videoPlayer" style="height: 50vh;" ></video>
+            <div style="margin:10px;" ref="dplayerContainer" >
+                <!-- <video controls ref="videoPlayer" style="height: 50vh;" ></video> -->
             </div>
         </div>
     </div>
@@ -42,11 +42,12 @@
 <script lang="ts">
 import { ref, onMounted, onUnmounted, watch } from 'vue'
 import axios from 'axios';
-import { DLNAService } from '@/services/DLNAService';  
+import { DLNAService } from '@/services/DLNAService';   
+import DPlayer from 'dplayer';  
 import Hls from 'hls.js';
 import flvjs from 'flv.js';
 
-// const dp = new DPlayer(options);
+
 const testDevices = {
     "success": false,
     "data": [
@@ -156,12 +157,23 @@ function timeStringToSeconds(timeString : string) {
     return hours * 3600 + minutes * 60 + seconds;
 }
 
-function formatTime(seconds: number) {
-    const hours = Math.floor(seconds / 3600);
-    const minutes = Math.floor(seconds / 60);
-    const secs = Math.floor(seconds % 60);
-    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+function formatTime(time: number|string) {
+    if(typeof time === 'string'){
+        if(time.length != 8){//保证统一的格式
+            const [hours, minutes, secs] = time.split(':');
+            return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+        }
+        return time
+    }else{
+        const seconds = time
+        const hours = Math.floor(seconds / 3600);
+        const minutes = Math.floor(seconds / 60);
+        const secs = Math.floor(seconds % 60);
+        return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+    }
 } 
+
+const dlnaProxy = "http://192.168.101.34:8082"
 
 export default {
     name: 'DLNAPlayer',
@@ -187,9 +199,7 @@ export default {
         const eventSource = ref<EventSource|null>(null)
         // 搜索 DLNA 设备
         const searchDevices = () => {
-            // 这里需要使用 node-ssdp 或类似库来实现设备发现
-            // 由于浏览器限制，可能需要通过后端服务来实现
-            // axios.get("http://192.168.101.34:8082/dlna/listDevices")
+            // axios.get(`${dlnaProxy}/dlna/listDevices`)
             //     .then(response => response.data)
             //     .then(response => { 
             //         devices.value = response.data as UpnpDevice[]
@@ -197,7 +207,7 @@ export default {
 
             devices.value = testDevices.data
             // devices.value = []
-            // eventSource.value = new EventSource("http://192.168.101.34:8082/dlna/listDevicesStream");
+            // eventSource.value = new EventSource(`${dlnaProxy}/dlna/listDevicesStream`);
 
             // eventSource.value.onmessage = (event:MessageEvent<string>) => {
             //     //console.log(event)
@@ -233,7 +243,8 @@ export default {
             playState.value = 'PLAYING'
             updateProgressScheduler.value = setInterval (() => {
                 const nextTime = currentTimeInSeconds.value + 1
-                if(nextTime > durationInSeconds.value){
+                //durationInSeconds.value == 0 可能是直播-流(有些dlna设备不会更新大小,有些会)
+                if(durationInSeconds.value != 0 && nextTime > durationInSeconds.value){
                     stopPlay()
                     return
                 }
@@ -242,7 +253,7 @@ export default {
         }
         const stopPlay = () => {
             clearInterval(updateProgressScheduler.value)
-            playState.value = 'STOPPED'//本来有一个PAUSED的 但是小米pause的时候同时发一个stopped过来 就很难受!
+            playState.value = 'STOPPED'//本来有一个PAUSED的 但是小爱音箱 pause的时候同时发一个stopped过来 就很难受!
         }
         //重置播放 如果指定了seekTarget跳转到指定的位置 重新开启新的播放(+ update scheduler)
         const resetPlay = (seekTarget: number|string|undefined) => {
@@ -254,13 +265,15 @@ export default {
             startPlay()
         }
         //更新当前播放的时间 + 更新进度
-        const updatePlayingTime = (nextTime: number|string) => {
-            if(typeof nextTime === 'string'){
-                currentTime.value = nextTime
-                currentTimeInSeconds.value = timeStringToSeconds(nextTime)
-            }else{
-                currentTimeInSeconds.value  = nextTime
-                currentTime.value = formatTime(currentTimeInSeconds.value)
+        const updatePlayingTime = (nextTime: number|string|undefined|null) => {
+            if(nextTime){
+                if(typeof nextTime === 'string'){
+                    currentTime.value = formatTime(nextTime)
+                    currentTimeInSeconds.value = timeStringToSeconds(nextTime)
+                }else{
+                    currentTimeInSeconds.value  = nextTime
+                    currentTime.value = formatTime(currentTimeInSeconds.value)
+                }
             }
 
             updateProgress()
@@ -272,10 +285,10 @@ export default {
         }
 
         //更新 总时长，当前播放时间
-        const resetTime = (trackDuration:string,relTime:string) => {
+        const resetTime = (trackDuration:string,relTime:string|undefined=undefined) => {
             //console.log(trackDuration, relTime)
 
-            duration.value = trackDuration
+            duration.value = formatTime(trackDuration)
             durationInSeconds.value = timeStringToSeconds(duration.value)
 
             updatePlayingTime(relTime)//or absTime?
@@ -287,6 +300,9 @@ export default {
                 if(dlnaService.value){
                     dlnaService.value.disconnect()
                 } 
+                if(!device.location){
+                    return
+                }
                 console.log('Connecting to device:', device)
                 //获取当前设备 (avTransport所有信息 媒体信息,位置信息,播放状态信息)
                 const avTransportInfo = await axios.get("http://192.168.101.34:8082/dlna/selectDevice",{
@@ -314,14 +330,17 @@ export default {
                     startPlay()
                 }
                 if(currentTrackUrl.value != avTransportInfo.mediaInfo?.currentURI){
-                    currentTrackUrl.value = avTransportInfo.mediaInfo?.currentURI
+                    let uri = avTransportInfo.mediaInfo?.currentURI ?? ""
+                    //改用chrome插件来完成 去掉指定host的 Referer请求头 
+                    // if(uri.indexOf("http://61.240.206.7") == 0){
+                    //     uri = uri.replace("http://61.240.206.7","http://localhost:8080")
+                    // }
+                    currentTrackUrl.value = uri
                 }
 
-                //找当前播放的信息(主要是 - 进度,播放状态)
-                // 实现设备连接逻辑
                 selectedDevice.value = device
               
-                const service = new DLNAService("http://192.168.101.34:8082", avTransportInfo.controlURL)
+                const service = new DLNAService(dlnaProxy, avTransportInfo.controlURL)
                 await service.connect()
                 
                 dlnaService.value = service
@@ -344,7 +363,7 @@ export default {
                 const currentTrackDuration = event.currentTrackDuration
                 const relTimePosition = event.relativeTimePosition
                 
-                if(event.currentTrackURI && currentTrackUrl.value != event.currentTrackURI){
+                if(event.currentTrackURI){
                     currentTrackUrl.value = event.currentTrackURI
                 }
                 const transportState = event.transportState
@@ -366,9 +385,9 @@ export default {
                     }else{
                         stopPlay()
                     }
-                }else if(!transportState) { //没有state -有些支持进度的 
+                }else if(!transportState) { //没有state -直播的会不断更新当前视频进度
                     if(currentTrackDuration){
-                        duration.value = currentTrackDuration
+                        resetTime(currentTrackDuration)
                     } 
                 }
                 //playState.value = transportState
@@ -390,33 +409,27 @@ export default {
         }
         // 播放控制函数
         const play = () => {
-            if (dlnaService.value) {
-                startPlay()
-                dlnaService.value.play()
+            if(dlnaService.value){
+                startPlay() //先执行,后面如果订阅事件没问题 会有一个回调调整当前的时间和进度
+                dlnaService.value?.play()
             }
         }
 
         const pause = () => {
-            if (dlnaService.value) {
-                stopPlay()
-                dlnaService.value.pause()
-            }
+            stopPlay()
+            dlnaService.value?.pause()
         }
 
         const stop = () => {
-            if (dlnaService.value) {
-                stopPlay()
-                dlnaService.value.stop()   
-            }
+            stopPlay()
+            dlnaService.value?.pause()
         }
 
         const seek = (seekTarget:string) => {
-            if (dlnaService.value) {
-                dlnaService.value.seek(seekTarget)
-            }
+            dlnaService.value?.seek(seekTarget)
         }
 
-        const setVolume = () => {
+        const setVolume = () => { //TODO
             if (dlnaService.value) {
                 // 实现音量控制逻辑
                 console.log('Setting volume to:', volume.value)
@@ -436,43 +449,82 @@ export default {
             if(eventSource.value){
                 eventSource.value.close()
             }
+            dp?.destroy()
         })
         watch(currentTrackUrl,(newUrl,_oldUrl) => {
-            if(newUrl)
-                initPlayer(newUrl)
+            if(newUrl){
+                console.log(newUrl)
+                initDPlayer(newUrl)
+            }
         })
-        // Hls.js 实例
-        let hls
-        let flvPlayer
-        // 初始化 HLS 播放
-        const initPlayer = (playUrl: string) => {
-            const video = videoPlayer.value;
-            if(!video){
-                return
+
+
+        const checkMIME = async (url:string) => {
+            const pathname = new URL(url).pathname
+            // 检查扩展名
+            if (pathname.endsWith('.flv')) {
+                return "flv"
+            }else if(pathname.endsWith('.m3u8')){
+                return "hls"
             }
-            if (Hls.isSupported()) {
-                hls = new Hls();
-                hls.loadSource(playUrl); // HLS 视频地址
-                hls.attachMedia(video);
-                hls.on(Hls.Events.MANIFEST_PARSED, () => {
-                    video.play(); // 视频加载完成后自动播放
-                });
-            } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-                // 如果浏览器原生支持 HLS（如 Safari）
-                    video.src = playUrl;
-                    video.addEventListener('loadedmetadata', () => {
-                        video.play();
-                    });
-            }else if (flvjs.isSupported()) {
-                flvPlayer = flvjs.createPlayer({
-                    type: 'flv',
-                    url: playUrl,
-                });
-                flvPlayer.attachMediaElement(video);
-                flvPlayer.load();
-                flvPlayer.play();
+            // 检查 Content-Type
+            try {
+                const response = await fetch(url, { method: 'HEAD' });
+                const contentType = response.headers.get('Content-Type');
+
+                if(contentType === 'video/x-flv'){
+                    return "flv"
+                }else if(contentType == 'application/vnd.apple.mpegurl'){
+                    return "hls"
+                }
+            } catch (error) {
+                console.error('请求失败:', error);
             }
-        };
+        }
+
+        let dp : DPlayer|undefined;
+        const initDPlayer = async (url:string) => {
+            dp?.destroy()
+            
+            const type = await checkMIME(url) 
+            console.log("MIME type",type)
+            dp = new DPlayer({
+                container: dplayerContainer.value,
+                video: {
+                    url: url,
+                    type: type ?? 'auto',
+                    customType: {
+                        hls: function(video:HTMLVideoElement, _player:DPlayer) {
+                            const hls = new Hls();
+                            hls.loadSource(video.src);
+                            hls.attachMedia(video);
+                        },
+                        flv: function(video:HTMLVideoElement, _player:DPlayer) {
+                            if (flvjs.isSupported()) {
+                                const flvPlayer = flvjs.createPlayer({
+                                    type: 'flv',
+                                    url: video.src
+                                });
+                                flvPlayer.attachMediaElement(video);
+                                flvPlayer.load();
+                            }
+                        }
+                    },
+                    volume: 0,
+                },
+                pluginOptions: {
+                    flv: {
+                        // refer to https://github.com/bilibili/flv.js/blob/master/docs/api.md#flvjscreateplayer
+                        mediaDataSource: {
+                            // mediaDataSource config
+                        },
+                        config: {
+                            // config
+                        },
+                    },
+                },
+            });
+        }
          
         return {
             videoPlayer,dplayerContainer,
