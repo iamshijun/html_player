@@ -10,9 +10,29 @@
                 </option>
             </select>
         </div>
+        <!-- 配置选项 -->
+        <div class="player-config">
+            <label class="config-item">
+                <input type="checkbox" v-model="checkProgressLocal">
+                在本地模拟进度
+            </label>
+            <label class="config-item">
+                <input type="checkbox" v-model="displayDeviceMedia">
+                在本地播放DLNA媒体
+            </label>
+        </div>
 
         <!-- 播放控制 -->
         <div class="player-controls" v-if="selectedDevice">
+            <div class="url-input-container">
+                <input 
+                    type="text" 
+                    v-model="inputUrl" 
+                    placeholder="请输入媒体URL"
+                    class="url-input"
+                />
+                <button @click="setMediaUrl" class="url-button">设置</button>
+            </div>
             <div class="progress-bar" @click="handleScrubClick">
                 <div class="progress" :style="{ width: progress + '%' }"></div>
                 <div class="scrubber" :style="{ left: scrubPosition + '%' }">
@@ -26,11 +46,11 @@
             </span>
             <div class="controls">
                 <button @click="play" :disabled="playState == 'PLAYING' ">播放</button>
-                <button @click="pause" :disabled="playState =='STOPPED' ">暂停</button>
+                <button @click="pause" :disabled="playState == 'PAUSED_PLAYBACK' ">暂停</button>
                 <button @click="stop" :disabled="playState =='STOPPED' ">停止</button>
                 <input type="range" v-model="volume" @change="setVolume" min="0" max="100" />
             </div>
-            <div style="margin:10px;" ref="dplayerContainer" >
+            <div style="margin:10px;" ref="dplayerContainer" v-if="displayDeviceMedia">
                 <!-- <video controls ref="videoPlayer" style="height: 50vh;" ></video> -->
             </div>
         </div>
@@ -46,113 +66,48 @@ import { DLNAService } from '@/services/DLNAService';
 import DPlayer from 'dplayer';  
 import Hls from 'hls.js';
 import flvjs from 'flv.js';
+import { AVTransportInfo, PlayBackStateEvent, PlayStatus, UpnpDevice } from "@/types/upnp"
 
+// const testDevices = {
+//     "success": false,
+//     "data": [
+//         {
+//             "location": "http://192.168.101.5:1647/",
+//             "server": "UPnP/1.0 DLNADOC/1.50 Platinum/1.0.5.13",
+//             "searchTarget": "urn:schemas-upnp-org:service:AVTransport:1",
+//             "uniqueServiceName": "uuid:4224cf6c-e2ba-b24c-39a2-79ce3273bbdf::urn:schemas-upnp-org:service:AVTransport:1",
+//             "name": "Kodi (192.168.101.5)",
+//             "manufacturer": "XBMC Foundation",
+//             "modelDescription": "Kodi - Media Renderer",
+//             "modelName": "Kodi"
+//         },
+//         {
+//             location: "http://192.168.101.34:53097/description.xml",
+//             manufacturer: "xfangfang",
+//             modelDescription: "AVTransport Media Renderer",
+//             modelName: "Macast",
+//             name: "Macast(iamshijun.local)",
+//             searchTarget: "urn:schemas-upnp-org:service:AVTransport:1",
+//             server: "Darwin/19.6.0 UPnP/1.0 Macast/0.7",
+//             uniqueServiceName: "uuid:07603c37-d9b6-400a-82ab-50aa83592eed::urn:schemas-upnp-org:service:AVTransport:1",
+//         },
+//         {
+//             "location": "http://192.168.101.24:9999/a483563d-ea67-4df5-99ae-37daabfd2b66.xml",
+//             "server": "Linux/4.9.61 UPnP/1.0 GUPnP/1.0.2",
+//             "searchTarget": "urn:schemas-upnp-org:service:AVTransport:1",
+//             "uniqueServiceName": "uuid:a483563d-ea67-4df5-99ae-37daabfd2b66::urn:schemas-upnp-org:service:AVTransport:1",
+//             "name": "小爱音箱-2807",
+//             "manufacturer": "Mi, Inc.",
+//             "modelDescription": "The Mi AI SoundBox",
+//             "modelName": "S12"
+//         }
+//     ]
+// }
 
-const testDevices = {
-    "success": false,
-    "data": [
-        {
-            "location": "http://192.168.101.5:1647/",
-            "server": "UPnP/1.0 DLNADOC/1.50 Platinum/1.0.5.13",
-            "searchTarget": "urn:schemas-upnp-org:service:AVTransport:1",
-            "uniqueServiceName": "uuid:4224cf6c-e2ba-b24c-39a2-79ce3273bbdf::urn:schemas-upnp-org:service:AVTransport:1",
-            "name": "Kodi (192.168.101.5)",
-            "manufacturer": "XBMC Foundation",
-            "modelDescription": "Kodi - Media Renderer",
-            "modelName": "Kodi"
-        },
-        {
-            location: "http://192.168.101.34:53097/description.xml",
-            manufacturer: "xfangfang",
-            modelDescription: "AVTransport Media Renderer",
-            modelName: "Macast",
-            name: "Macast(iamshijun.local)",
-            searchTarget: "urn:schemas-upnp-org:service:AVTransport:1",
-            server: "Darwin/19.6.0 UPnP/1.0 Macast/0.7",
-            uniqueServiceName: "uuid:07603c37-d9b6-400a-82ab-50aa83592eed::urn:schemas-upnp-org:service:AVTransport:1",
-        },
-        {
-            "location": "http://192.168.101.24:9999/a483563d-ea67-4df5-99ae-37daabfd2b66.xml",
-            "server": "Linux/4.9.61 UPnP/1.0 GUPnP/1.0.2",
-            "searchTarget": "urn:schemas-upnp-org:service:AVTransport:1",
-            "uniqueServiceName": "uuid:a483563d-ea67-4df5-99ae-37daabfd2b66::urn:schemas-upnp-org:service:AVTransport:1",
-            "name": "小爱音箱-2807",
-            "manufacturer": "Mi, Inc.",
-            "modelDescription": "The Mi AI SoundBox",
-            "modelName": "S12"
-        }
-    ]
-}
-
-interface DeviceInfo {
-    controlURL: string
-    eventURL: string
-}
-
-interface AVTransportInfo extends DeviceInfo{
-    transportInfo : TransportInfo
-    positionInfo : PositionInfo
-    mediaInfo?: MediaInfo
-}
-
-interface TransportInfo {
-    currentSpeed: number
-    currentTransportState: string // STOPPED,PLAYING
-    currentTransportStatus : string // OK ,..
-}
-interface PositionInfo {
-    absCount: number
-    absTime: string
-    relCount: number
-    relTime: string
-    track: number
-    trackDuration: string
-    trackMetaData: MediaMetadata
-}
-
-interface MediaMetadata {
-    item : MetadataItem
-}
-interface MetadataItem {
-    longDescription: string
-    title : string //!
-    res : {
-        protocolInfo: string
-        value: string
-    },
-    storageMedium: string
-}
-
-interface MediaInfo { 
-    currentURI : string
-    currentURIMetaData: MediaMetadata
-    nextURI : string
-    nextURIMetaData: MediaMetadata,
-    playMedium: string
-}
-
-interface UpnpDevice { 
-    location: string
-    searchTarget:string
-    name: string 
-}
-
-interface PlayBackStateEvent {
-    currentPlayMode: string
-    currentTrack: number
-    currentTrackDuration: string
-    currentTrackMetaData: MediaMetadata
-    currentTrackURI:string
-    currentTransportActions: string // "Next,Previous,Seek,Play"
-    numberOfTracks: number
-    relativeTimePosition: string
-    transportState: string // "STOPPED" , "PLAYING"  ,"PAUSED_PLAYBACK"-seek
-}
 
 function timeStringToSeconds(timeString : string) {
     // 按 ":" 分割字符串
     const [hours, minutes, seconds] = timeString.split(':').map(Number);
-
     // 计算总秒数
     return hours * 3600 + minutes * 60 + seconds;
 }
@@ -167,7 +122,7 @@ function formatTime(time: number|string) {
     }else{
         const seconds = time
         const hours = Math.floor(seconds / 3600);
-        const minutes = Math.floor(seconds / 60);
+        const minutes = Math.floor((seconds / 60) % 60);
         const secs = Math.floor(seconds % 60);
         return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
     }
@@ -185,7 +140,7 @@ export default {
 
         const currentTrackUrl = ref<string|undefined>(undefined) 
 
-        const playState = ref<string>("STOPPED")
+        const playState = ref<string|PlayStatus>(PlayStatus.STOPPED)
         const progress = ref<number>(0)
         const currentTimeInSeconds = ref<number>(0)
         const durationInSeconds = ref<number>(0)
@@ -194,6 +149,8 @@ export default {
         const currentTime = ref<string>("00:00:00")//view
         const duration = ref<string>("00:00:00")//view
 
+        const checkProgressLocal = ref<boolean>(true) //是否在本地模拟进度 -由device响应来更新实际进度(对与seek的时候不会响应的false较好)
+        const displayDeviceMedia = ref<boolean>(true) //是否本地播放dlna媒体
         const videoPlayer = ref<HTMLVideoElement|undefined>()
         const dplayerContainer = ref<HTMLDivElement|undefined>()
         const eventSource = ref<EventSource|null>(null)
@@ -205,24 +162,24 @@ export default {
             //         devices.value = response.data as UpnpDevice[]
             //     })
 
-            devices.value = testDevices.data
-            // devices.value = []
-            // eventSource.value = new EventSource(`${dlnaProxy}/dlna/listDevicesStream`);
+            // devices.value = testDevices.data
+            devices.value = []
+            eventSource.value = new EventSource(`${dlnaProxy}/dlna/listDevicesStream`);
 
-            // eventSource.value.onmessage = (event:MessageEvent<string>) => {
-            //     //console.log(event)
-            //     if(event.data == "DONE"){
-            //         eventSource.value?.close();
-            //     }else{
-            //         const result = JSON.parse(event.data)
-            //         devices.value.push(result)
-            //     }
-            // };
+            eventSource.value.onmessage = (event:MessageEvent<string>) => {
+                //console.log(event)
+                if(event.data == "DONE"){
+                    eventSource.value?.close();
+                }else{
+                    const result = JSON.parse(event.data)
+                    devices.value.push(result)
+                }
+            };
 
-            // eventSource.value.onerror = (error) => {
-            //     console.error('EventSource failed:', error);
-            //     eventSource.value?.close();
-            // };
+            eventSource.value.onerror = (error) => {
+                console.error('EventSource failed:', error);
+                eventSource.value?.close();
+            };
 
 
             console.log('Searching for DLNA devices...')
@@ -240,20 +197,31 @@ export default {
             if(updateProgressScheduler.value){
                 stopPlay() //reset
             }
-            playState.value = 'PLAYING'
-            updateProgressScheduler.value = setInterval (() => {
-                const nextTime = currentTimeInSeconds.value + 1
-                //durationInSeconds.value == 0 可能是直播-流(有些dlna设备不会更新大小,有些会)
-                if(durationInSeconds.value != 0 && nextTime > durationInSeconds.value){
-                    stopPlay()
-                    return
+            playState.value = PlayStatus.PLAYING
+            updateProgressScheduler.value = setInterval (async () => {
+                if(checkProgressLocal.value){
+                    const nextTime = currentTimeInSeconds.value + 1
+                    //durationInSeconds.value == 0 可能是直播-流(有些dlna设备不会更新大小,有些会)
+                    if(durationInSeconds.value != 0 && nextTime > durationInSeconds.value){
+                        stopPlay()
+                        return
+                    }
+                    updatePlayingTime(nextTime)
+                }else{
+                    const response = await dlnaService.value!.getPositionInfo().then(response=> response.data)
+                    const positionInfo = response.data
+                    resetTime(positionInfo.trackDuration,positionInfo.relTime)
                 }
-                updatePlayingTime(nextTime)
             },1000,"")
+        }
+        const pausePlay = () => {
+            clearInterval(updateProgressScheduler.value)
+            playState.value = PlayStatus.PAUSED_PLAYBACK
         }
         const stopPlay = () => {
             clearInterval(updateProgressScheduler.value)
-            playState.value = 'STOPPED'//本来有一个PAUSED的 但是小爱音箱 pause的时候同时发一个stopped过来 就很难受!
+            playState.value = PlayStatus.STOPPED
+            resetTime()
         }
         //重置播放 如果指定了seekTarget跳转到指定的位置 重新开启新的播放(+ update scheduler)
         const resetPlay = (seekTarget: number|string|undefined) => {
@@ -285,14 +253,33 @@ export default {
         }
 
         //更新 总时长，当前播放时间
-        const resetTime = (trackDuration:string,relTime:string|undefined=undefined) => {
+        const resetTime = (trackDuration:string|undefined=undefined,relTime:string|undefined=undefined) => {
             //console.log(trackDuration, relTime)
-
-            duration.value = formatTime(trackDuration)
-            durationInSeconds.value = timeStringToSeconds(duration.value)
+            if(trackDuration){
+                duration.value = formatTime(trackDuration)
+                durationInSeconds.value = timeStringToSeconds(duration.value)
+            }
 
             updatePlayingTime(relTime)//or absTime?
         }
+
+        watch(checkProgressLocal,async (newValue,_oldValue)=>{
+            if(newValue){ //如果改成本地 先查一次进度信息
+                const response = await dlnaService.value!.getPositionInfo().then(response=> response.data)
+                const positionInfo = response.data
+                currentTimeInSeconds.value = timeStringToSeconds(positionInfo.relTime)
+                currentTime.value = formatTime(currentTimeInSeconds.value)
+            }
+        })
+        watch(displayDeviceMedia,async (newValue,_oldValue)=>{
+            if(newValue){
+                if(currentTrackUrl.value){
+                    initDPlayer(currentTrackUrl.value)
+                } 
+            }else{
+                videoPlayer.value?.pause()
+            }
+        })
 
         // 连接设备
         const connectToDevice = async (device: UpnpDevice) => {
@@ -303,6 +290,7 @@ export default {
                 if(!device.location){
                     return
                 }
+                stopPlay()
                 console.log('Connecting to device:', device)
                 //获取当前设备 (avTransport所有信息 媒体信息,位置信息,播放状态信息)
                 const avTransportInfo = await axios.get("http://192.168.101.34:8082/dlna/selectDevice",{
@@ -319,16 +307,24 @@ export default {
                 if(!avTransportInfo){
                     return
                 } 
+ 
+                //目前来说 我手上的S12小爱音箱 ,seek 的时候似乎不会在event中响应
+                // if(device.modelDescription.indexOf("Mi AI SoundBox") >= 0 && device.modelName == "S12"){
+                //     checkProgressLocal.value = false
+                // }
 
                 console.log("Device AVTransport Info",avTransportInfo)
                 const positionInfo = avTransportInfo.positionInfo
-                const currentTransportState = avTransportInfo.transportInfo.currentTransportState
+                if( avTransportInfo.transportInfo){
+                    const currentTransportState = avTransportInfo.transportInfo.currentTransportState
 
-                // playState.value = currentTransportState
-                resetTime(positionInfo.trackDuration,positionInfo.relTime)
-                if(currentTransportState == "PLAYING"){
-                    startPlay()
+                    // playState.value = currentTransportState
+                    resetTime(positionInfo.trackDuration,positionInfo.relTime)
+                    if(currentTransportState == PlayStatus.PLAYING){
+                        startPlay()
+                    }
                 }
+
                 if(currentTrackUrl.value != avTransportInfo.mediaInfo?.currentURI){
                     let uri = avTransportInfo.mediaInfo?.currentURI ?? ""
                     //改用chrome插件来完成 去掉指定host的 Referer请求头 
@@ -367,10 +363,16 @@ export default {
                     currentTrackUrl.value = event.currentTrackURI
                 }
                 const transportState = event.transportState
-                if(transportState == 'STOPPED'){//pause
+                if(transportState == PlayStatus.STOPPED){//pause
                     //relativeTimePosition 看这个有没有重置为0 
-                    stopPlay()
-                }else if(transportState == "PLAYING" || transportState == "PAUSED_PLAYBACK"){
+                    //我当前的小爱音箱S12 没有pause只有stop 但是它也不是真正的停止 这里可以根据播放的时间来判断
+                    if(currentTrackDuration && currentTrackDuration != relTimePosition){
+                        pausePlay()
+                    }else{
+                        stopPlay()
+                    }
+                    
+                }else if(transportState == PlayStatus.PLAYING || transportState == PlayStatus.PAUSED_PLAYBACK){
                     if(currentTrackDuration && relTimePosition){
                         resetTime(currentTrackDuration,relTimePosition)
                     }else{
@@ -378,12 +380,12 @@ export default {
                         const positionInfo = response.data
                         resetTime(positionInfo.trackDuration,positionInfo.relTime)
                     }
-                    if(transportState == "PLAYING"){
-                        if(playState.value != "PLAYING"){
+                    if(transportState == PlayStatus.PLAYING){
+                        if(playState.value != PlayStatus.PLAYING){
                             startPlay()
                         }
                     }else{
-                        stopPlay()
+                        pausePlay()
                     }
                 }else if(!transportState) { //没有state -直播的会不断更新当前视频进度
                     if(currentTrackDuration){
@@ -399,7 +401,7 @@ export default {
             const progressBar = event.currentTarget as HTMLElement
             const rect = progressBar.getBoundingClientRect()
             const offsetX = event.clientX - rect.left
-            const percent = offsetX / rect.width
+            const percent = offsetX / rect.width 
 
             const targetInSeconds = durationInSeconds.value * percent
             const seekTarget = formatTime(targetInSeconds)
@@ -416,13 +418,13 @@ export default {
         }
 
         const pause = () => {
-            stopPlay()
+            pausePlay()
             dlnaService.value?.pause()
         }
 
         const stop = () => {
             stopPlay()
-            dlnaService.value?.pause()
+            dlnaService.value?.stop()
         }
 
         const seek = (seekTarget:string) => {
@@ -439,6 +441,7 @@ export default {
         // 生命周期钩子
         onMounted(() => {
             searchDevices()
+            stopPlay()
         })
 
         onUnmounted(() => {
@@ -525,24 +528,58 @@ export default {
                 },
             });
         }
+
+        const inputUrl = ref('')
+        const setMediaUrl = async () => {
+            if (!inputUrl.value || !dlnaService.value) {
+                return
+            }
+            try {
+                await dlnaService.value.setAVTransportURI(inputUrl.value)
+                console.log('媒体URL设置成功')
+            } catch (error) {
+                console.error('设置媒体URL失败:', error)
+            }
+        }
          
         return {
             videoPlayer,dplayerContainer,
-            devices,
-            selectedDevice, 
-            volume,
-            onDeviceSelect,
-            play, pause, stop,seek,
-            setVolume,
+            devices,selectedDevice, onDeviceSelect,
+            play, pause, stop,seek,setVolume,
             currentTrackUrl,
             //进度，时间信息
-            progress,scrubPosition,playState,currentTime,duration ,handleScrubClick
+            volume,progress,scrubPosition,playState,currentTime,duration ,handleScrubClick,
+            checkProgressLocal,displayDeviceMedia,
+            inputUrl,setMediaUrl,
         }
     }
 }
 </script>
 
 <style scoped>
+.player-config {
+    display: flex;
+    flex-direction: row;
+    justify-content: flex-start;
+    gap: 20px;
+    margin: 15px 0;
+    padding: 10px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    background-color: #f9f9f9;
+}
+
+.config-item {
+    display: flex;
+    align-items: center;
+    margin: 0;
+    cursor: pointer;
+}
+
+.config-item input[type="checkbox"] {
+    margin-right: 8px;
+}
+
 .dlna-player {
     padding: 20px;
 }
@@ -629,6 +666,35 @@ input[type="range"] {
 
 .scrubber:hover {
     transform: translateX(-50%) scale(1.2);
+}
+
+.url-input-container {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 15px;
+    width: 100%;
+}
+
+.url-input {
+    flex: 1;
+    min-width: 0; /* 防止输入框溢出容器 */
+    padding: 8px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+}
+
+.url-button {
+    padding: 8px 16px;
+    background-color: #4CAF50;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    white-space: nowrap; /* 防止按钮文字换行 */
+}
+
+.url-button:hover {
+    background-color: #45a049;
 }
 
 </style>

@@ -592,18 +592,13 @@ export default {
 </script>
 
 <style scoped>
-:root {
-    --safe-area-bottom: 0px;
-    /* 默认值 */
-}
-
 .video-container {
     position: fixed;
     top: 0;
     left: 0;
     width: 100vw;
     /*但是安全区域 safe-area-inset-* 只有在ios中有  */
-    height: calc(100vh - var(--safe-area-bottom, 0));
+    height: 100vh;
     margin: 0;
     padding: 0;
     /* overflow: auto; */

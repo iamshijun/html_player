@@ -4,6 +4,7 @@ import DLNAPlayer from './components/DLNAPlayer.vue';
 </script>
 
 <template>
-  <DLNAPlayer/>
+  <!-- <DLNAPlayer/> -->
+   <HtmlVideoPlayer/>
 </template>
  

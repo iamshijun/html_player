@@ -37,6 +37,14 @@ export class DLNAService {
     async getPositionInfo() {
         return this.dlnaApi.get(`/dlna/getPositionInfo?controlURL=${this.controlURL}`);
     }
+    async setAVTransportURI(uri:string) {
+        return this.dlnaApi.post('/dlna/setAVTransportURI', {
+            controlURL: this.controlURL,
+            params: {
+                uri
+            }
+        });
+    }
 
     async seek(position: string) {
         return this.dlnaApi.post('/dlna/seek', {
