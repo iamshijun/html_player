@@ -3,10 +3,18 @@
         <div class="video-player">
             <video ref="videoPlayer" 
                 @loadedmetadata="onLoadedMetadata" 
-                @ended="onPlayPausedEnded"
-                @pause="onPlayPausedEnded" 
+                @ended="onPausedOrEnded"
+                @pause="onPausedOrEnded" 
                 @play="onPlayStarted" 
-                
+                @dblclick.prevent
+                @click.prevent
+                @contextmenu.prevent
+                style="pointer-events: none;">  
+                <source :src="fileUrl" :type="mimeType">
+                您的浏览器不支持视频播放
+            </video>
+
+            <div class="video-interaction-layer" ref="videoInteractionPlayer"
                 @dblclick="handleDoubleClick"
                 @mousedown="handleMouseDown"
                 @mouseup="handleMouseUp"
@@ -15,14 +23,12 @@
 
                 @touchstart="handleTouchStart($event)"
                 @touchmove="handleTouchMove($event)" 
-                @touchend="handleTouchEnd"
-                >
-                <source :src="fileUrl" :type="mimeType">
-                您的浏览器不支持视频播放
-            </video>
+                @touchend="handleTouchEnd">
+
+            </div>
 
             <!-- Custom Controls -->
-            <div class="custom-controls" v-show="showControls">
+            <div class="custom-controls" v-show="showControls || !isLoaded">
                 <div class="progress-bar" @mousemove="handleScrubHover" @mouseleave="handleScrubLeave"
                     @click="handleScrubClick">
                     <div class="progress" :style="{ width: progress + '%' }"></div>
@@ -60,11 +66,18 @@
                 </div>
 
                 <div class="media-setting-item">
-                    <label>选择本地文件：</label>
-                    <input type="file" accept="video/*,audio/*" @change="handleFileChange" />
+                    <label>本地播放：</label>
+                    <button class="file-input-button" @click="fileInput!.click()">选择文件</button>
+                    <input
+                        ref="fileInput"
+                        type="file"
+                        accept="video/*,audio/*"
+                        @change="handleFileChange"
+                        style="display: none"
+                    />
                 </div>
 
-                <div class="media-setting-item url-input">
+                <div class="url-input-container">
                     <button @click="loadUrl">加载</button>
                     <input type="text" v-model="videoUrl" placeholder="输入视频URL">
                 </div>
@@ -79,14 +92,6 @@
 <script lang="ts">
 import NoSleep from 'nosleep.js'; 
 import { ref } from 'vue';
-
-// function adjustSafeArea() {
-//     const windowHeight = window.innerHeight;
-//     const documentHeight = document.documentElement.clientHeight;
-//     const safeAreaBottom = Math.max(0, windowHeight - documentHeight);
-//     console.log(`windowHeight:${windowHeight} , documentHeight:${documentHeight}, safeAreaBottom:${safeAreaBottom}`)
-//     document.documentElement.style.setProperty('--safe-area-bottom', `${safeAreaBottom}px`);
-// }
 
 export default {
     props :{
@@ -118,7 +123,7 @@ export default {
             isLongPress: false,
             hasMove: false,
             lastTapTime: 0,
-            tapTimeout: null as number | null,
+            tapTimeout: undefined as number | undefined,
             touchStartX: 0,
             deltaX: 0,
 
@@ -138,14 +143,16 @@ export default {
             isHovering: false,
             hoverTime: '00:00',
             tooltipPosition: 0,
-            controlsTimeout: null as number|null, //hideControl timeout
+            controlsTimeout: undefined as number|undefined, //hideControl timeout
             isFullscreen: false
         }
     },
     setup() {
         const videoPlayer = ref<HTMLVideoElement|undefined>(undefined)
+        const videoInteractionPlayer = ref<HTMLDivElement|undefined>(undefined)
+        const fileInput = ref<HTMLInputElement|undefined>(undefined)
         return {
-            videoPlayer
+            videoPlayer,videoInteractionPlayer,fileInput
         }
     },
     mounted() {
@@ -181,7 +188,7 @@ export default {
             }
             this.isPlaying = true
         },
-        onPlayPausedEnded() {
+        onPausedOrEnded() {
             if (this.noSleep) {
                 this.noSleep.disable()
             }
@@ -251,19 +258,15 @@ export default {
         isMobile() {
             return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
         },
-        clearTapTimeout() {
-            if (this.tapTimeout) {
-                clearTimeout(this.tapTimeout)
-            }
+        clearTapTimeout() { 
+            clearTimeout(this.tapTimeout)
         },
 
         handleTouchStart(event:TouchEvent) {
             this.showSettings = false
             if (!this.isMobile()) return
 
-            if (this.controlsTimeout) {
-                clearTimeout(this.controlsTimeout);
-            }
+            clearTimeout(this.controlsTimeout);
 
             this.showSettings = false
             this.touchStartX = event.touches[0].clientX
@@ -272,7 +275,7 @@ export default {
             const currentTime = new Date().getTime()
 
             const tapLength = currentTime - this.lastTapTime
-            const doubleClick = tapLength < 200 && tapLength > 0
+            const doubleClick = tapLength < 250 && tapLength > 0
             const longPress = this.isLongPress 
 
             if (doubleClick || longPress) {
@@ -280,7 +283,7 @@ export default {
                 if(!video) {
                     return
                 }
-                const rect = video.getBoundingClientRect()
+                const rect = this.videoInteractionPlayer!.getBoundingClientRect()
                 const touchX = this.touchStartX - rect.left
                 const width = rect.width
 
@@ -376,7 +379,7 @@ export default {
             if(!video){
                 return
             }
-            const rect = video.getBoundingClientRect()
+            const rect = this.videoInteractionPlayer!.getBoundingClientRect()
             const clickX = event.clientX - rect.left
             const width = rect.width
 
@@ -433,6 +436,7 @@ export default {
 
         handleScrubHover(event:MouseEvent) {
             this.isHovering = true
+            clearTimeout(this.controlsTimeout);
 
             const progressBar = event.currentTarget as HTMLElement
             const rect = progressBar.getBoundingClientRect()
@@ -449,6 +453,9 @@ export default {
 
         handleScrubLeave() {
             this.isHovering = false
+            if (this.showControls) {
+                this.resetControlsTimeout();
+            }
         },
 
         handleScrubClick(event:MouseEvent) {
@@ -514,13 +521,11 @@ export default {
             const video = this.videoPlayer
             if(!video){
                 return
-            }
-            video.style.width = '100vw';
-            video.style.height = '100vh'; 
-
+            } 
+            const container = video.closest('.video-container') as HTMLElement
             if (!document.fullscreenElement) {
-                // 请求进入全屏模式
-                video.requestFullscreen();
+                // 由 video-interaction-layer 请求进入全屏模式
+                await container.requestFullscreen();
 
                 this.isFullscreen = true
                 // 锁定屏幕方向为横屏
@@ -602,6 +607,7 @@ export default {
     margin: 0;
     padding: 0;
     /* overflow: auto; */
+    /* background: #000; */
 }
 
 .video-player {
@@ -610,24 +616,31 @@ export default {
     height: 100%;
 }
 
-video {
+.video-interaction-layer {
+    position: absolute;
+    top: 0;
+    left: 0;
     width: 100%;
     height: 100%;
-    object-fit: contain;
+    /* 或者你想要的背景色 */
+    /* background-color: #000;  */
+    z-index: 1;
 }
+
 
 video,
 audio {
+    /* display: none;  */
     width: 100%;
-    margin-bottom: 1rem;
-}
+    height: 100%;
+} 
 
 .media-settings-icon {
     position: absolute;
     top: 10px;
     right: 10px;
     cursor: pointer;
-    z-index: 1;
+    z-index: 3;
     background: rgba(0, 0, 0, 0.5);
     padding: 5px;
     border-radius: 50%;
@@ -646,22 +659,28 @@ audio {
     border-radius: 4px;
     padding: 12px;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
-    z-index: 2;
+    z-index: 3;
     min-width: 300px;
 }
 
 .media-setting-item {
     margin-bottom: 8px;
+    display: flex;
+    align-items: center;
 }
 
 .media-setting-item label {
     color: #fff;
     font-size: 14px;
     margin-right: 8px;
+    min-width: 100px; /* 确保所有标签宽度一致 */
+    text-align: left;
 }
 
-.media-setting-item input {
-    width: 70px;
+.media-setting-item input,
+.media-setting-item select {
+    flex: 1;
+    max-width: 150px;
     padding: 4px;
     border-radius: 2px;
     border: 1px solid #666;
@@ -669,12 +688,33 @@ audio {
     color: #fff;
 }
 
-.url-input {
-    display: flex;
-    gap: 7px;
+.file-input-wrapper {
+    flex: 1;
+    max-width: 150px;
 }
 
-.url-input input {
+.file-input-button {
+    width: 100%;
+    padding: 4px 4px;
+    border-radius: 4px;
+    border: 1px solid #666;
+    background: #333;
+    color: #fff;
+    cursor: pointer;
+    text-align: center;
+}
+
+.file-input-button:hover {
+    background: #444;
+}
+
+.url-input-container {
+    display: flex;
+    gap: 7px;
+    flex: 1;
+}
+
+.url-input-container input {
     flex: 1;
     padding: 3px;
     border-radius: 4px;
@@ -683,7 +723,7 @@ audio {
     color: #fff;
 }
 
-.url-input button {
+.url-input-container button {
     padding: 3px 8px;
     border-radius: 4px;
     border: none;
@@ -692,7 +732,7 @@ audio {
     cursor: pointer;
 }
 
-.url-input button:hover {
+.url-input-container button:hover {
     background: #0056b3;
 }
 
@@ -707,6 +747,7 @@ audio {
     padding: 15px;
     box-sizing: border-box;
     transition: opacity 0.3s;
+    z-index: 2;
 }
 
 

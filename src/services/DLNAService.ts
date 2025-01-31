@@ -2,13 +2,11 @@ import axios, { AxiosInstance } from 'axios';
 import WebSocketClient from '../utils/websocket';
 
 export class DLNAService {
-    private ws: WebSocketClient
-    private controlURL : string
+    private ws: WebSocketClient 
     private dlnaServerHostname : string
-    private dlnaApi : AxiosInstance
-    constructor(apiUrl:string, controlURL: string) {
-        this.controlURL = controlURL
-        this.dlnaServerHostname = new URL(controlURL).hostname
+    private dlnaApi : AxiosInstance 
+    constructor(apiUrl:string, private controlURL: string,private soap11:boolean=false) { 
+        this.dlnaServerHostname = new URL(this.controlURL).hostname
         this.ws = new WebSocketClient(apiUrl + '/ws');
 
         this.dlnaApi = axios.create({
@@ -23,23 +21,24 @@ export class DLNAService {
     }
 
     async play() {
-        return this.dlnaApi.post('/dlna/play', { controlURL:this.controlURL  })
+        return this.dlnaApi.post('/dlna/play', { controlURL:this.controlURL, soap11:this.soap11 })
     }
 
     async pause() {
-        return this.dlnaApi.post('/dlna/pause', { controlURL:this.controlURL  })
+        return this.dlnaApi.post('/dlna/pause', { controlURL:this.controlURL, soap11:this.soap11 })
     }
 
     async stop() {
-        return this.dlnaApi.post('/dlna/stop', { controlURL:this.controlURL  })
+        return this.dlnaApi.post('/dlna/stop', { controlURL:this.controlURL, soap11:this.soap11 })
     }
 
     async getPositionInfo() {
-        return this.dlnaApi.get(`/dlna/getPositionInfo?controlURL=${this.controlURL}`);
+        return this.dlnaApi.get(`/dlna/getPositionInfo?controlURL=${this.controlURL}&soap11=${this.soap11}`);
     }
     async setAVTransportURI(uri:string) {
         return this.dlnaApi.post('/dlna/setAVTransportURI', {
             controlURL: this.controlURL,
+            soap11: this.soap11,
             params: {
                 uri
             }
@@ -49,6 +48,7 @@ export class DLNAService {
     async seek(position: string) {
         return this.dlnaApi.post('/dlna/seek', {
              controlURL: this.controlURL,
+             soap11: this.soap11,
              params: {
                 position
              } 

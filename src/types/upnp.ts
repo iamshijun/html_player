@@ -2,6 +2,7 @@
 export interface DeviceInfo {
     controlURL: string
     eventURL: string
+    soap11: boolean
 }
 
 export interface AVTransportInfo extends DeviceInfo{
@@ -57,9 +58,13 @@ export interface UpnpDevice {
     uniqueServiceName: string,
 }
 
-export enum PlayStatus {
+export enum PlayStatus { //TransportState
     PLAYING = "PLAYING",
     PAUSED_PLAYBACK = "PAUSED_PLAYBACK",
+    // PAUSED_RECORDING = "PAUSED_RECORDING",
+    // RECORDING = "RECORDING",
+    // TRANSITIONING = "TRANSITIONING",
+    // NO_MEDIA_PRESENT = "NO_MEDIA_PRESENT",
     STOPPED = "STOPPED"
 }
 

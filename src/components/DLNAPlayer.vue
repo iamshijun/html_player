@@ -66,43 +66,53 @@ import { DLNAService } from '@/services/DLNAService';
 import DPlayer from 'dplayer';  
 import Hls from 'hls.js';
 import flvjs from 'flv.js';
-import { AVTransportInfo, PlayBackStateEvent, PlayStatus, UpnpDevice } from "@/types/upnp"
+import { AVTransportInfo, MediaInfo, PlayBackStateEvent, PlayStatus, UpnpDevice } from "@/types/upnp"
 
-// const testDevices = {
-//     "success": false,
-//     "data": [
-//         {
-//             "location": "http://192.168.101.5:1647/",
-//             "server": "UPnP/1.0 DLNADOC/1.50 Platinum/1.0.5.13",
-//             "searchTarget": "urn:schemas-upnp-org:service:AVTransport:1",
-//             "uniqueServiceName": "uuid:4224cf6c-e2ba-b24c-39a2-79ce3273bbdf::urn:schemas-upnp-org:service:AVTransport:1",
-//             "name": "Kodi (192.168.101.5)",
-//             "manufacturer": "XBMC Foundation",
-//             "modelDescription": "Kodi - Media Renderer",
-//             "modelName": "Kodi"
-//         },
-//         {
-//             location: "http://192.168.101.34:53097/description.xml",
-//             manufacturer: "xfangfang",
-//             modelDescription: "AVTransport Media Renderer",
-//             modelName: "Macast",
-//             name: "Macast(iamshijun.local)",
-//             searchTarget: "urn:schemas-upnp-org:service:AVTransport:1",
-//             server: "Darwin/19.6.0 UPnP/1.0 Macast/0.7",
-//             uniqueServiceName: "uuid:07603c37-d9b6-400a-82ab-50aa83592eed::urn:schemas-upnp-org:service:AVTransport:1",
-//         },
-//         {
-//             "location": "http://192.168.101.24:9999/a483563d-ea67-4df5-99ae-37daabfd2b66.xml",
-//             "server": "Linux/4.9.61 UPnP/1.0 GUPnP/1.0.2",
-//             "searchTarget": "urn:schemas-upnp-org:service:AVTransport:1",
-//             "uniqueServiceName": "uuid:a483563d-ea67-4df5-99ae-37daabfd2b66::urn:schemas-upnp-org:service:AVTransport:1",
-//             "name": "小爱音箱-2807",
-//             "manufacturer": "Mi, Inc.",
-//             "modelDescription": "The Mi AI SoundBox",
-//             "modelName": "S12"
-//         }
-//     ]
-// }
+const testDevices = {
+    "success": false,
+    "data": [
+        {
+            "location": "http://192.168.101.5:1647/",
+            "server": "UPnP/1.0 DLNADOC/1.50 Platinum/1.0.5.13",
+            "searchTarget": "urn:schemas-upnp-org:service:AVTransport:1",
+            "uniqueServiceName": "uuid:4224cf6c-e2ba-b24c-39a2-79ce3273bbdf::urn:schemas-upnp-org:service:AVTransport:1",
+            "name": "Kodi (192.168.101.5)",
+            "manufacturer": "XBMC Foundation",
+            "modelDescription": "Kodi - Media Renderer",
+            "modelName": "Kodi"
+        },
+        {
+            "location": "http://192.168.101.34:53097/description.xml",
+            "manufacturer": "xfangfang",
+            "modelDescription": "AVTransport Media Renderer",
+            "modelName": "Macast",
+            "name": "Macast(iamshijun.local)",
+            "searchTarget": "urn:schemas-upnp-org:service:AVTransport:1",
+            "server": "Darwin/19.6.0 UPnP/1.0 Macast/0.7",
+            "uniqueServiceName": "uuid:07603c37-d9b6-400a-82ab-50aa83592eed::urn:schemas-upnp-org:service:AVTransport:1",
+        },
+        {
+            "location": "http://192.168.101.24:9999/a483563d-ea67-4df5-99ae-37daabfd2b66.xml",
+            "server": "Linux/4.9.61 UPnP/1.0 GUPnP/1.0.2",
+            "searchTarget": "urn:schemas-upnp-org:service:AVTransport:1",
+            "uniqueServiceName": "uuid:a483563d-ea67-4df5-99ae-37daabfd2b66::urn:schemas-upnp-org:service:AVTransport:1",
+            "name": "小爱音箱-2807",
+            "manufacturer": "Mi, Inc.",
+            "modelDescription": "The Mi AI SoundBox",
+            "modelName": "S12"
+        },
+        {
+            "location": "http://192.168.101.12:49152/description.xml",
+            "manufacturer": "LEBO",
+            "modelDescription": "Lebo Media Render",
+            "modelName": "HappyCast",
+            "name": "TV(192.168.101.12）",
+            "searchTarget": "urn:schemas-upnp-org:service:AVTransport:1",
+            "server": "Linux/3.0.8+, UPnP/1.0, Portable SDK for UPnP devices/1.6.13",
+            "uniqueServiceName": "uuid:F7CA5454-3F48-4390-8009-0c52e285c268::urn:schemas-upnp-org:service:AVTransport:1"
+        }
+    ]
+}
 
 
 function timeStringToSeconds(timeString : string) {
@@ -148,6 +158,7 @@ export default {
 
         const currentTime = ref<string>("00:00:00")//view
         const duration = ref<string>("00:00:00")//view
+        const useSoap11 = ref(false)
 
         const checkProgressLocal = ref<boolean>(true) //是否在本地模拟进度 -由device响应来更新实际进度(对与seek的时候不会响应的false较好)
         const displayDeviceMedia = ref<boolean>(true) //是否本地播放dlna媒体
@@ -162,24 +173,24 @@ export default {
             //         devices.value = response.data as UpnpDevice[]
             //     })
 
-            // devices.value = testDevices.data
-            devices.value = []
-            eventSource.value = new EventSource(`${dlnaProxy}/dlna/listDevicesStream`);
+            devices.value = testDevices.data
+            // devices.value = []
+            // eventSource.value = new EventSource(`${dlnaProxy}/dlna/listDevicesStream`);
 
-            eventSource.value.onmessage = (event:MessageEvent<string>) => {
-                //console.log(event)
-                if(event.data == "DONE"){
-                    eventSource.value?.close();
-                }else{
-                    const result = JSON.parse(event.data)
-                    devices.value.push(result)
-                }
-            };
+            // eventSource.value.onmessage = (event:MessageEvent<string>) => {
+            //     //console.log(event)
+            //     if(event.data == "DONE"){
+            //         eventSource.value?.close();
+            //     }else{
+            //         const result = JSON.parse(event.data)
+            //         devices.value.push(result)
+            //     }
+            // };
 
-            eventSource.value.onerror = (error) => {
-                console.error('EventSource failed:', error);
-                eventSource.value?.close();
-            };
+            // eventSource.value.onerror = (error) => {
+            //     console.error('EventSource failed:', error);
+            //     eventSource.value?.close();
+            // };
 
 
             console.log('Searching for DLNA devices...')
@@ -281,6 +292,16 @@ export default {
             }
         })
 
+        const getMediaUrl = (mediaInfo?: MediaInfo) => {
+            if(!mediaInfo){
+                return ""
+            }
+            const { currentURI = '', currentURIMetaData } = mediaInfo;
+            const mediaUri = currentURI.trim();
+            const metaResValue = currentURIMetaData?.item.res.value;
+            return mediaUri.length === 0 ? metaResValue : mediaUri;
+        }
+
         // 连接设备
         const connectToDevice = async (device: UpnpDevice) => {
             try {
@@ -293,7 +314,7 @@ export default {
                 stopPlay()
                 console.log('Connecting to device:', device)
                 //获取当前设备 (avTransport所有信息 媒体信息,位置信息,播放状态信息)
-                const avTransportInfo = await axios.get("http://192.168.101.34:8082/dlna/selectDevice",{
+                const avTransportInfo = await axios.get(`${dlnaProxy}/dlna/selectDevice`,{
                     params: { location: device.location  }
                 }).then(response => {
                         const resp = response.data
@@ -307,13 +328,9 @@ export default {
                 if(!avTransportInfo){
                     return
                 } 
- 
-                //目前来说 我手上的S12小爱音箱 ,seek 的时候似乎不会在event中响应
-                // if(device.modelDescription.indexOf("Mi AI SoundBox") >= 0 && device.modelName == "S12"){
-                //     checkProgressLocal.value = false
-                // }
 
                 console.log("Device AVTransport Info",avTransportInfo)
+                useSoap11.value = avTransportInfo.soap11
                 const positionInfo = avTransportInfo.positionInfo
                 if( avTransportInfo.transportInfo){
                     const currentTransportState = avTransportInfo.transportInfo.currentTransportState
@@ -324,19 +341,20 @@ export default {
                         startPlay()
                     }
                 }
-
-                if(currentTrackUrl.value != avTransportInfo.mediaInfo?.currentURI){
-                    let uri = avTransportInfo.mediaInfo?.currentURI ?? ""
+                const mediaUri = getMediaUrl(avTransportInfo.mediaInfo)
+                if(currentTrackUrl.value != mediaUri){
+                    let uri = mediaUri
                     //改用chrome插件来完成 去掉指定host的 Referer请求头 
                     // if(uri.indexOf("http://61.240.206.7") == 0){
                     //     uri = uri.replace("http://61.240.206.7","http://localhost:8080")
                     // }
+
                     currentTrackUrl.value = uri
                 }
 
                 selectedDevice.value = device
               
-                const service = new DLNAService(dlnaProxy, avTransportInfo.controlURL)
+                const service = new DLNAService(dlnaProxy, avTransportInfo.controlURL,avTransportInfo.soap11)
                 await service.connect()
                 
                 dlnaService.value = service
@@ -345,7 +363,7 @@ export default {
                 console.error('Failed to connect to device:', error)
             }
         }
- 
+ 0
 
         const subscribeUpnpEvent = () => {
             if(!dlnaService.value){
@@ -353,7 +371,7 @@ export default {
             }
             const service = dlnaService.value
             service.subscribePlaybackState(async (data) => {
-                console.log(data)
+                //console.log(data)
                 const event = data.data.event as PlayBackStateEvent
 
                 const currentTrackDuration = event.currentTrackDuration
@@ -531,11 +549,12 @@ export default {
 
         const inputUrl = ref('')
         const setMediaUrl = async () => {
-            if (!inputUrl.value || !dlnaService.value) {
+            if (!inputUrl.value) {
                 return
             }
             try {
-                await dlnaService.value.setAVTransportURI(inputUrl.value)
+                currentTrackUrl.value = inputUrl.value
+                await dlnaService.value?.setAVTransportURI(inputUrl.value)
                 console.log('媒体URL设置成功')
             } catch (error) {
                 console.error('设置媒体URL失败:', error)
