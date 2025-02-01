@@ -92,6 +92,9 @@
 <script lang="ts">
 import NoSleep from 'nosleep.js'; 
 import { ref } from 'vue';
+import {checkMediaType} from "@/utils/http";
+import Hls from 'hls.js';
+// import flvjs from 'flv.js';
 
 export default {
     props :{
@@ -144,7 +147,8 @@ export default {
             hoverTime: '00:00',
             tooltipPosition: 0,
             controlsTimeout: undefined as number|undefined, //hideControl timeout
-            isFullscreen: false
+            isFullscreen: false,
+            hls: null as Hls | null,  // 添加 hls 实例
         }
     },
     setup() {
@@ -472,9 +476,17 @@ export default {
         },
 
         formatTime(seconds: number) {
-            const minutes = Math.floor(seconds / 60);
+            if(isNaN(seconds)){
+                return '00:00:00'
+            }
+            // const minutes = Math.floor(seconds / 60);
             const secs = Math.floor(seconds % 60);
-            return `${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+            // if(minutes >= 60){ //超过1小时
+                const hours = Math.floor(seconds / 3600);
+                const minutes = Math.floor((seconds / 60) % 60); 
+                return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+            // }
+            // return `${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
         },
 
         togglePlay() {    
@@ -549,19 +561,52 @@ export default {
             if (this.fileUrl) {
                 URL.revokeObjectURL(this.fileUrl)
             }
+            if (this.hls) {
+                this.hls.destroy()
+                this.hls = null
+            }
 
             try {
-                // 设置新的URL
-                this.fileUrl = this.videoUrl
-                this.mimeType = this.getMimeTypeFromUrl(this.videoUrl) 
-
                 // 确保视频元素加载完成
                 const video = this.videoPlayer
                 if(!video){
                     return
                 }
-                video.src = this.fileUrl
-                video.load()
+                const mediaType = await checkMediaType(this.videoUrl)
+                if(mediaType === 'hls'){
+                     // 检查浏览器是否原生支持HLS
+                     if (video.canPlayType('application/vnd.apple.mpegurl')) {
+                        video.src = this.videoUrl
+                    } else if (Hls.isSupported()) {
+                        this.hls = new Hls({
+                            // xhrSetup: (xhr) => {
+                            //     xhr.timeout = 20000; // 设置10秒超时
+                            // },
+                            // manifestLoadingTimeOut: 20000,    // manifest加载超时时间
+                            // manifestLoadingMaxRetry: 3,       // manifest加载重试次数
+                            // levelLoadingTimeOut: 10000,       // level加载超时时间
+                            // levelLoadingMaxRetry: 3,          // level加载重试次数
+                            // fragLoadingTimeOut: 20000,        // 分片加载超时时间
+                            // fragLoadingMaxRetry: 3            // 分片加载重试次数
+                        });
+                        this.hls.loadSource(this.videoUrl)
+                        this.hls.attachMedia(video)
+                        
+                        await new Promise((resolve, reject) => {
+                            this.hls!.on(Hls.Events.MANIFEST_PARSED, resolve)
+                            this.hls!.on(Hls.Events.ERROR, reject)
+                        })
+                    } else {
+                        alert('您的浏览器不支持HLS播放')
+                        return
+                    }
+                }else{
+                    // 非HLS流的原有处理逻辑
+                    this.fileUrl = this.videoUrl
+                    this.mimeType = this.getMimeTypeFromUrl(this.videoUrl) 
+                    video.src = this.fileUrl
+                    video.load()
+                } 
 
                 // 等待媒体准备好
                 await new Promise((resolve) => {

@@ -63,6 +63,7 @@
 import { ref, onMounted, onUnmounted, watch } from 'vue'
 import axios from 'axios';
 import { DLNAService } from '@/services/DLNAService';   
+import { checkMediaType } from '@/utils/http';
 import DPlayer from 'dplayer';  
 import Hls from 'hls.js';
 import flvjs from 'flv.js';
@@ -480,34 +481,13 @@ export default {
         })
 
 
-        const checkMIME = async (url:string) => {
-            const pathname = new URL(url).pathname
-            // 检查扩展名
-            if (pathname.endsWith('.flv')) {
-                return "flv"
-            }else if(pathname.endsWith('.m3u8')){
-                return "hls"
-            }
-            // 检查 Content-Type
-            try {
-                const response = await fetch(url, { method: 'HEAD' });
-                const contentType = response.headers.get('Content-Type');
-
-                if(contentType === 'video/x-flv'){
-                    return "flv"
-                }else if(contentType == 'application/vnd.apple.mpegurl'){
-                    return "hls"
-                }
-            } catch (error) {
-                console.error('请求失败:', error);
-            }
-        }
+        
 
         let dp : DPlayer|undefined;
         const initDPlayer = async (url:string) => {
             dp?.destroy()
             
-            const type = await checkMIME(url) 
+            const type = await checkMediaType(url) 
             console.log("MIME type",type)
             dp = new DPlayer({
                 container: dplayerContainer.value,
