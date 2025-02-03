@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite --host",
     "build": "vite build",
+    "zip": "node archive.js dist dist.zip",
     "preview": "vite preview",
     "type-check": "vue-tsc --noEmit"
   },

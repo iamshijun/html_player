@@ -1,0 +1,52 @@
+name: build
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+    
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    environment: production
+    # env:
+    #   BRANCH_NAME: ${{ github.head_ref || github.ref_name }} 
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'  # 指定 Node.js 版本
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build the project
+        run: |
+          npm run build
+          npm run zip
+
+
+      - name: Upload artifact to remote server
+        run: |
+          ls .
+          curl -X POST \
+              -H "Authorization: Bearer ${{ secrets.SITE_UPLOAD_TOKEN }}" \
+              -F "file=@dist.zip" \
+              -F "path=/data/www/app/player" ${{ vars.SITE_UPLOAD_URL }}
+
+      - name: Notify Slack
+        if: always()
+        uses: slackapi/slack-github-action@v1.23.0
+        with:
+          payload: |
+            {
+              "text": "Build Notification\n*Repository*: ${{ github.repository }}\n*Workflow*: `${{ github.workflow }}`\n*Status*: `${{ job.status }}`\n*Branch*: `${{ env.BRANCH_NAME }}`\n*Commit*: `${{ github.sha }} (${{github.ref }})`\n*Triggered by*: `${{ github.actor }}`\n *View details*: <https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}|Click here>",
+              "color": "${{ job.status == 'success' && '#36a64f' || '#ff0000' }}"
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK }}
