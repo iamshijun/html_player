@@ -1,0 +1,11 @@
+name = "player"
+account_id = "98bf0ea109e2716bbaa26317ecdd8c70"
+workers_dev = true
+compatibility_date = "2025-02-03"
+main = "worker/index.js"
+
+[site]
+bucket = "./dist"
+
+[build]
+command = "npm run build-worker"

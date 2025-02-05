@@ -62,7 +62,7 @@
 <script lang="ts">
 import { ref, onMounted, onUnmounted, watch } from 'vue'
 import axios from 'axios';
-import { DLNAService } from '@/services/DLNAService';   
+import { DLNAProxy } from '@/services/DLNAProxy';   
 import { checkMediaType } from '@/utils/http';
 import DPlayer from 'dplayer';  
 import Hls from 'hls.js';
@@ -139,7 +139,7 @@ function formatTime(time: number|string) {
     }
 } 
 
-const dlnaProxy = "http://192.168.101.34:8082"
+const dlnaProxyBase = "http://192.168.101.34:8082"
 
 export default {
     name: 'DLNAPlayer',
@@ -147,7 +147,7 @@ export default {
         const devices = ref<UpnpDevice[]>([])
         const selectedDevice = ref<UpnpDevice | null>(null)  
         const volume = ref(50)
-        const dlnaService = ref<DLNAService|null>(null)
+        const dlnaService = ref<DLNAProxy|null>(null)
 
         const currentTrackUrl = ref<string|undefined>(undefined) 
 
@@ -315,7 +315,7 @@ export default {
                 stopPlay()
                 console.log('Connecting to device:', device)
                 //获取当前设备 (avTransport所有信息 媒体信息,位置信息,播放状态信息)
-                const avTransportInfo = await axios.get(`${dlnaProxy}/dlna/selectDevice`,{
+                const avTransportInfo = await axios.get(`${dlnaProxyBase}/dlna/selectDevice`,{
                     params: { location: device.location  }
                 }).then(response => {
                         const resp = response.data
@@ -325,11 +325,11 @@ export default {
                         }
                         return resp.data as AVTransportInfo
                     }) 
+                    
 
                 if(!avTransportInfo){
                     return
                 } 
-
                 console.log("Device AVTransport Info",avTransportInfo)
                 useSoap11.value = avTransportInfo.soap11
                 const positionInfo = avTransportInfo.positionInfo
@@ -355,7 +355,7 @@ export default {
 
                 selectedDevice.value = device
               
-                const service = new DLNAService(dlnaProxy, avTransportInfo.controlURL,avTransportInfo.soap11)
+                const service = new DLNAProxy(dlnaProxyBase, avTransportInfo.controlURL,avTransportInfo.soap11)
                 await service.connect()
                 
                 dlnaService.value = service
@@ -696,4 +696,4 @@ input[type="range"] {
     background-color: #45a049;
 }
 
-</style>
+</style>@/services/DLNAProxy

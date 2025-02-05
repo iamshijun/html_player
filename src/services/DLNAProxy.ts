@@ -1,7 +1,7 @@
 import axios, { AxiosInstance } from 'axios';
 import WebSocketClient from '../utils/websocket';
 
-export class DLNAService {
+export class DLNAProxy {
     private ws: WebSocketClient 
     private dlnaServerHostname : string
     private dlnaApi : AxiosInstance 
