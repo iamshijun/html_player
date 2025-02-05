@@ -1,11 +1,15 @@
 
 export interface DeviceInfo {
+    services: ServiceInfo[]
+}
+
+export interface ServiceInfo {
     controlURL: string
     eventURL: string
     soap11: boolean
 }
 
-export interface AVTransportInfo extends DeviceInfo{
+export interface AVTransportInfo extends ServiceInfo{
     transportInfo : TransportInfo
     positionInfo : PositionInfo
     mediaInfo?: MediaInfo

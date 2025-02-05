@@ -60,7 +60,7 @@
 
 
 <script lang="ts">
-import { ref, onMounted, onUnmounted, watch } from 'vue'
+import { ref, onMounted, onUnmounted, watch, computed } from 'vue'
 import axios from 'axios';
 import { DLNAProxy } from '@/services/DLNAProxy';   
 import { checkMediaType } from '@/utils/http';
@@ -148,6 +148,9 @@ export default {
         const selectedDevice = ref<UpnpDevice | null>(null)  
         const volume = ref(50)
         const dlnaService = ref<DLNAProxy|null>(null)
+        const avTransportService = computed(() => {
+            return dlnaService.value?.avTransportService
+        })
 
         const currentTrackUrl = ref<string|undefined>(undefined) 
 
@@ -158,8 +161,7 @@ export default {
         const scrubPosition = ref<number>(0)
 
         const currentTime = ref<string>("00:00:00")//view
-        const duration = ref<string>("00:00:00")//view
-        const useSoap11 = ref(false)
+        const duration = ref<string>("00:00:00")//view 
 
         const checkProgressLocal = ref<boolean>(true) //是否在本地模拟进度 -由device响应来更新实际进度(对与seek的时候不会响应的false较好)
         const displayDeviceMedia = ref<boolean>(true) //是否本地播放dlna媒体
@@ -220,7 +222,7 @@ export default {
                     }
                     updatePlayingTime(nextTime)
                 }else{
-                    const response = await dlnaService.value!.getPositionInfo().then(response=> response.data)
+                    const response = await avTransportService.value!.getPositionInfo().then(response=> response.data)
                     const positionInfo = response.data
                     resetTime(positionInfo.trackDuration,positionInfo.relTime)
                 }
@@ -277,7 +279,7 @@ export default {
 
         watch(checkProgressLocal,async (newValue,_oldValue)=>{
             if(newValue){ //如果改成本地 先查一次进度信息
-                const response = await dlnaService.value!.getPositionInfo().then(response=> response.data)
+                const response = await avTransportService.value!.getPositionInfo().then(response=> response.data)
                 const positionInfo = response.data
                 currentTimeInSeconds.value = timeStringToSeconds(positionInfo.relTime)
                 currentTime.value = formatTime(currentTimeInSeconds.value)
@@ -314,7 +316,7 @@ export default {
                 }
                 stopPlay()
                 console.log('Connecting to device:', device)
-                //获取当前设备 (avTransport所有信息 媒体信息,位置信息,播放状态信息)
+                //FIXME 改为deviceinfo
                 const avTransportInfo = await axios.get(`${dlnaProxyBase}/dlna/selectDevice`,{
                     params: { location: device.location  }
                 }).then(response => {
@@ -330,8 +332,7 @@ export default {
                 if(!avTransportInfo){
                     return
                 } 
-                console.log("Device AVTransport Info",avTransportInfo)
-                useSoap11.value = avTransportInfo.soap11
+                console.log("Device AVTransport Info",avTransportInfo) 
                 const positionInfo = avTransportInfo.positionInfo
                 if( avTransportInfo.transportInfo){
                     const currentTransportState = avTransportInfo.transportInfo.currentTransportState
@@ -395,7 +396,7 @@ export default {
                     if(currentTrackDuration && relTimePosition){
                         resetTime(currentTrackDuration,relTimePosition)
                     }else{
-                        const response = await service.getPositionInfo().then(response=> response.data)
+                        const response = await avTransportService.value!.getPositionInfo().then(response=> response.data)
                         const positionInfo = response.data
                         resetTime(positionInfo.trackDuration,positionInfo.relTime)
                     }
@@ -430,24 +431,24 @@ export default {
         }
         // 播放控制函数
         const play = () => {
-            if(dlnaService.value){
+            if(avTransportService.value){
                 startPlay() //先执行,后面如果订阅事件没问题 会有一个回调调整当前的时间和进度
-                dlnaService.value?.play()
+                avTransportService.value?.play()
             }
         }
 
         const pause = () => {
             pausePlay()
-            dlnaService.value?.pause()
+            avTransportService.value?.pause()
         }
 
         const stop = () => {
             stopPlay()
-            dlnaService.value?.stop()
+            avTransportService.value?.stop()
         }
 
         const seek = (seekTarget:string) => {
-            dlnaService.value?.seek(seekTarget)
+            avTransportService.value?.seek(seekTarget)
         }
 
         const setVolume = () => { //TODO
@@ -534,7 +535,7 @@ export default {
             }
             try {
                 currentTrackUrl.value = inputUrl.value
-                await dlnaService.value?.setAVTransportURI(inputUrl.value)
+                await avTransportService.value?.setAVTransportURI(inputUrl.value)
                 console.log('媒体URL设置成功')
             } catch (error) {
                 console.error('设置媒体URL失败:', error)
