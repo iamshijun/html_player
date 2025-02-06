@@ -60,14 +60,15 @@
 
 
 <script lang="ts">
-import { ref, onMounted, onUnmounted, watch, computed } from 'vue'
-import axios from 'axios';
+import { ref, onMounted, onUnmounted, watch } from 'vue'
 import { DLNAProxy } from '@/services/DLNAProxy';   
+import { DLNAClient } from '@/services/DLNAClient';   
 import { checkMediaType } from '@/utils/http';
+import axios from 'axios';
 import DPlayer from 'dplayer';  
 import Hls from 'hls.js';
 import flvjs from 'flv.js';
-import { AVTransportInfo, MediaInfo, PlayBackStateEvent, PlayStatus, UpnpDevice } from "@/types/upnp"
+import { AVTransportInfo, IAVTransportService, MediaInfo, PlayBackStateEvent, PlayStatus, UpnpDevice } from "@/types/upnp"
 
 const testDevices = {
     "success": false,
@@ -107,7 +108,7 @@ const testDevices = {
             "manufacturer": "LEBO",
             "modelDescription": "Lebo Media Render",
             "modelName": "HappyCast",
-            "name": "TV(192.168.101.12）",
+            "name": "TV(192.168.101.12)",
             "searchTarget": "urn:schemas-upnp-org:service:AVTransport:1",
             "server": "Linux/3.0.8+, UPnP/1.0, Portable SDK for UPnP devices/1.6.13",
             "uniqueServiceName": "uuid:F7CA5454-3F48-4390-8009-0c52e285c268::urn:schemas-upnp-org:service:AVTransport:1"
@@ -139,18 +140,24 @@ function formatTime(time: number|string) {
     }
 } 
 
-const dlnaProxyBase = "http://192.168.101.34:8082"
+const dlnaDelegator = "http://192.168.101.34:8082" //中继服务base url
+const dlnaProxyURL = "http://192.168.101.34:8080/upnp" //代理服务(e.g:nginx 主要负责处理cors)
 
 export default {
+    props : {
+        local: {
+            type:Boolean,
+            default:false
+        }
+    },
     name: 'DLNAPlayer',
-    setup() {
+    setup(props) {
         const devices = ref<UpnpDevice[]>([])
         const selectedDevice = ref<UpnpDevice | null>(null)  
         const volume = ref(50)
-        const dlnaService = ref<DLNAProxy|null>(null)
-        const avTransportService = computed(() => {
-            return dlnaService.value?.avTransportService
-        })
+
+        const dlnaService = ref<DLNAProxy|DLNAClient|null>(null)
+        const avTransportService = ref<IAVTransportService|null>(null)
 
         const currentTrackUrl = ref<string|undefined>(undefined) 
 
@@ -222,8 +229,7 @@ export default {
                     }
                     updatePlayingTime(nextTime)
                 }else{
-                    const response = await avTransportService.value!.getPositionInfo().then(response=> response.data)
-                    const positionInfo = response.data
+                    const positionInfo = await avTransportService.value!.getPositionInfo()
                     resetTime(positionInfo.trackDuration,positionInfo.relTime)
                 }
             },1000,"")
@@ -279,8 +285,7 @@ export default {
 
         watch(checkProgressLocal,async (newValue,_oldValue)=>{
             if(newValue){ //如果改成本地 先查一次进度信息
-                const response = await avTransportService.value!.getPositionInfo().then(response=> response.data)
-                const positionInfo = response.data
+                const positionInfo = await avTransportService.value!.getPositionInfo()
                 currentTimeInSeconds.value = timeStringToSeconds(positionInfo.relTime)
                 currentTime.value = formatTime(currentTimeInSeconds.value)
             }
@@ -301,8 +306,34 @@ export default {
             }
             const { currentURI = '', currentURIMetaData } = mediaInfo;
             const mediaUri = currentURI.trim();
-            const metaResValue = currentURIMetaData?.item.res.value;
+            const metaResValue = currentURIMetaData?.item?.res?.value;
             return mediaUri.length === 0 ? metaResValue : mediaUri;
+        }
+
+        const adjustWithAVTransportInfo = (avTransportInfo?:AVTransportInfo|null) => {
+                if(!avTransportInfo){
+                return
+            } 
+            console.log("Device AVTransport Info",avTransportInfo) 
+            const positionInfo = avTransportInfo.positionInfo
+            if( avTransportInfo.transportInfo){
+                const currentTransportState = avTransportInfo.transportInfo.currentTransportState
+
+                // playState.value = currentTransportState
+                resetTime(positionInfo.trackDuration,positionInfo.relTime)
+                if(currentTransportState == PlayStatus.PLAYING){
+                    startPlay()
+                }
+            }
+            const mediaUri = getMediaUrl(avTransportInfo.mediaInfo)
+            if(currentTrackUrl.value != mediaUri){
+                let uri = mediaUri
+                //改用chrome插件来完成 去掉指定host的 Referer请求头 
+                // if(uri.indexOf("http://61.240.206.7") == 0){
+                //     uri = uri.replace("http://61.240.206.7","http://localhost:8080")
+                // }
+                currentTrackUrl.value = uri
+            }
         }
 
         // 连接设备
@@ -316,10 +347,29 @@ export default {
                 }
                 stopPlay()
                 console.log('Connecting to device:', device)
-                //FIXME 改为deviceinfo
-                const avTransportInfo = await axios.get(`${dlnaProxyBase}/dlna/selectDevice`,{
-                    params: { location: device.location  }
-                }).then(response => {
+
+                let avTransportInfo ;
+                if(props.local){
+                    const client = new DLNAClient(dlnaProxyURL, device.location)
+                    const avtservice = await client.getAVTransportService()
+                    avTransportService.value = avtservice
+
+                    const transportInfo = await avtservice.getTransportInfo()
+                    const positionInfo = await avtservice.getPositionInfo()
+                    const mediaInfo = await avtservice.getMediaInfo()
+
+                    avTransportInfo = {
+                        transportInfo, positionInfo, mediaInfo,
+                        controlURL: avtservice.controlURL,
+                        eventURL: avtservice.eventURL,
+                        soap11: true
+                    } satisfies AVTransportInfo
+
+                    dlnaService.value = client
+                }else{
+                    avTransportInfo = await axios.get(`${dlnaDelegator}/dlna/selectDevice`,{//FIXME 改为deviceinfo
+                        params: { location: device.location  }
+                    }).then(response => {
                         const resp = response.data
                         if(!resp.success){
                             console.log(response)
@@ -327,40 +377,21 @@ export default {
                         }
                         return resp.data as AVTransportInfo
                     }) 
-                    
 
-                if(!avTransportInfo){
-                    return
-                } 
-                console.log("Device AVTransport Info",avTransportInfo) 
-                const positionInfo = avTransportInfo.positionInfo
-                if( avTransportInfo.transportInfo){
-                    const currentTransportState = avTransportInfo.transportInfo.currentTransportState
-
-                    // playState.value = currentTransportState
-                    resetTime(positionInfo.trackDuration,positionInfo.relTime)
-                    if(currentTransportState == PlayStatus.PLAYING){
-                        startPlay()
+                    if(avTransportInfo){
+                        const client = new DLNAProxy(dlnaDelegator, avTransportInfo.controlURL,avTransportInfo.soap11)
+                        avTransportService.value = client.avTransportService
+                        await client.connect()
+                        
+                        dlnaService.value = client
+                      
                     }
                 }
-                const mediaUri = getMediaUrl(avTransportInfo.mediaInfo)
-                if(currentTrackUrl.value != mediaUri){
-                    let uri = mediaUri
-                    //改用chrome插件来完成 去掉指定host的 Referer请求头 
-                    // if(uri.indexOf("http://61.240.206.7") == 0){
-                    //     uri = uri.replace("http://61.240.206.7","http://localhost:8080")
-                    // }
+                subscribeUpnpEvent()
 
-                    currentTrackUrl.value = uri
-                }
+                adjustWithAVTransportInfo(avTransportInfo)
 
                 selectedDevice.value = device
-              
-                const service = new DLNAProxy(dlnaProxyBase, avTransportInfo.controlURL,avTransportInfo.soap11)
-                await service.connect()
-                
-                dlnaService.value = service
-                subscribeUpnpEvent()
             } catch (error) {
                 console.error('Failed to connect to device:', error)
             }
@@ -384,7 +415,6 @@ export default {
                 }
                 const transportState = event.transportState
                 if(transportState == PlayStatus.STOPPED){//pause
-                    //relativeTimePosition 看这个有没有重置为0 
                     //我当前的小爱音箱S12 没有pause只有stop 但是它也不是真正的停止 这里可以根据播放的时间来判断
                     if(currentTrackDuration && currentTrackDuration != relTimePosition){
                         pausePlay()
@@ -396,8 +426,7 @@ export default {
                     if(currentTrackDuration && relTimePosition){
                         resetTime(currentTrackDuration,relTimePosition)
                     }else{
-                        const response = await avTransportService.value!.getPositionInfo().then(response=> response.data)
-                        const positionInfo = response.data
+                        const positionInfo = await avTransportService.value!.getPositionInfo()
                         resetTime(positionInfo.trackDuration,positionInfo.relTime)
                     }
                     if(transportState == PlayStatus.PLAYING){

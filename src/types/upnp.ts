@@ -1,3 +1,13 @@
+export interface IAVTransportService {
+    play() : Promise<any>
+    pause() : Promise<any>
+    stop() : Promise<any>
+    seek(position: string) : Promise<any>
+    setAVTransportURI(uri: string): Promise<any>
+    getTransportInfo() : Promise<TransportInfo>
+    getPositionInfo() : Promise<PositionInfo>
+    getMediaInfo() : Promise<MediaInfo>
+}
 
 export interface DeviceInfo {
     services: ServiceInfo[]
@@ -26,28 +36,36 @@ export interface PositionInfo {
     relCount: number
     relTime: string
     track: number
+    trackURI: string
     trackDuration: string
-    trackMetaData: MediaMetadata
+    trackMetaData?: MediaMetadata|null
 }
 
 export interface MediaMetadata {
     item : MetadataItem
 }
 export interface MetadataItem {
-    longDescription: string
+    longDescription?: string
     title : string //!
-    res : {
+    res? : {
         protocolInfo: string
         value: string
     },
-    storageMedium: string
+    storageMedium?: string
+    artist?: string
+    album?: string
+    resolution?: string
+    genre?: string
+    duration?: string
+    albumArtURI?: string
+    size?: number
 }
 
 export interface MediaInfo { 
     currentURI : string
-    currentURIMetaData: MediaMetadata
-    nextURI : string
-    nextURIMetaData: MediaMetadata,
+    currentURIMetaData: MediaMetadata|null
+    nextURI? : string|null
+    nextURIMetaData?: MediaMetadata|null,
     playMedium: string
 }
 

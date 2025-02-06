@@ -4,7 +4,7 @@ import HtmlVideoPlayer from './components/HtmlVideoPlayer.vue';
 </script>
 
 <template>
-  <!-- <DLNAPlayer/> -->
+  <!-- <DLNAPlayer :local="true"/> -->
    <HtmlVideoPlayer/>
 </template>
  
