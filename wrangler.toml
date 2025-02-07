@@ -4,6 +4,12 @@ workers_dev = true
 compatibility_date = "2025-02-03"
 main = "worker/index.js"
 
+[[routes]]  
+pattern = "player.asitanokibou.site"
+custom_domain = true
+zone_id = "578ea85456cdce1b241ad8584a088313"
+
+
 [site]
 bucket = "./dist"
 
