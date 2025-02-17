@@ -9,6 +9,12 @@
                 @dblclick.prevent
                 @click.prevent
                 @contextmenu.prevent
+                playsinline
+                webkit-playsinline
+                x5-playsinline
+                x-webkit-airplay="allow"
+                x5-video-player-type="h5"
+                x5-video-player-fullscreen="true"
                 style="pointer-events: none;">  
                 <source :src="fileUrl" :type="mimeType">
                 您的浏览器不支持视频播放
@@ -205,6 +211,15 @@ export default {
         video.addEventListener('timeupdate', this.updateProgress);
         // video.addEventListener('timeupdate', this.updateSubtitle);
         // video.addEventListener('fullscreenchange', function() { });
+
+        // 添加全屏变化事件监听
+        video.addEventListener('webkitbeginfullscreen', () => {
+            this.isFullscreen = true;
+        });
+        video.addEventListener('webkitendfullscreen', () => {
+            this.isFullscreen = false;
+        });
+        
         if (this.isMobile()) {
             this.noSleep = new NoSleep();
         }
@@ -572,6 +587,15 @@ export default {
                 return
             } 
             const container = video.closest('.video-container') as HTMLElement
+            // 添加 iOS Safari 全屏支持
+            if (video.webkitEnterFullscreen) {
+                // iOS Safari 的特殊处理
+                video.webkitEnterFullscreen();
+                this.isFullscreen = true;
+                return;
+            }
+
+            // 检查当前是否已经在全屏模式
             if (!document.fullscreenElement) {
                 // 由 video-interaction-layer 请求进入全屏模式
                 await container.requestFullscreen();
@@ -586,7 +610,9 @@ export default {
                     document.exitFullscreen();
                 }
                 // 解锁屏幕方向
-                screen.orientation.unlock();
+                if (screen.orientation && screen.orientation.unlock) {
+                    screen.orientation.unlock();
+                }
                 this.isFullscreen = false
             }
         },
@@ -768,6 +794,7 @@ export default {
     padding: 0;
     /* overflow: auto; */
     /* background: #000; */
+    z-index: 1;
 }
 
 .video-player {
@@ -805,6 +832,18 @@ audio {
     /* display: none;  */
     width: 100%;
     height: 100%;
+
+     /* 禁用默认控件 */
+    user-select: none;
+    -webkit-touch-callout: none;
+    object-fit: contain;
+    /* 尝试隐藏默认控件 */
+    ::-webkit-media-controls {
+        display: none !important;
+    }
+    ::-webkit-media-controls-enclosure {
+        display: none !important;
+    }
 } 
 
 .media-settings-icon {
@@ -920,7 +959,7 @@ audio {
     padding: 15px;
     box-sizing: border-box;
     transition: opacity 0.3s;
-    z-index: 2;
+    z-index: 100;
 }
 
 

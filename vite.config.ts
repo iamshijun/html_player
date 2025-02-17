@@ -17,6 +17,17 @@ export default defineConfig(({mode}) => {
           global: 'window', // 将 global 定义为 window
       },
       base: env.VITE_APP_PUBLIC_PATH || '/',
+      build: {
+        target: ['es2015','safari12'], // 设置目标浏览器版本
+        minify: 'terser',
+        terserOptions: {
+          compress: {
+            // 避免某些可能在旧版本浏览器中不兼容的优化
+            arrows: false,
+            collapse_vars: false,
+          },
+        },
+      },
     }
   }
 )
