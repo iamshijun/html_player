@@ -14,6 +14,10 @@
                 您的浏览器不支持视频播放
             </video>
 
+            <div class="subtitle-layer" :style="subtitleStyle" v-show="currentSubtitle">
+                {{ currentSubtitle?.text }}
+            </div>
+
             <div class="video-interaction-layer" ref="videoInteractionPlayer"
                 @dblclick="handleDoubleClick"
                 @mousedown="handleMouseDown"
@@ -81,6 +85,18 @@
                     <button @click="loadUrl">加载</button>
                     <input type="text" v-model="videoUrl" placeholder="输入视频URL">
                 </div>
+
+                <div class="media-setting-item">
+                    <label>字幕文件：</label>
+                    <button class="file-input-button" @click="subtitleInput!.click()">选择字幕</button>
+                    <input
+                        ref="subtitleInput"
+                        type="file"
+                        accept=".srt,.vtt"
+                        @change="handleSubtitleChange"
+                        style="display: none"
+                    />
+                </div>
             </div>
             <div class="media-settings-icon" @click="toggleSettings">
                 <span>⚙️</span>
@@ -95,6 +111,12 @@ import { ref } from 'vue';
 import {checkMediaType} from "@/utils/http";
 import Hls from 'hls.js';
 // import flvjs from 'flv.js';
+
+interface Subtitle {
+    startTime: number;
+    endTime: number;
+    text: string;
+}
 
 export default {
     props :{
@@ -149,14 +171,29 @@ export default {
             controlsTimeout: undefined as number|undefined, //hideControl timeout
             isFullscreen: false,
             hls: null as Hls | null,  // 添加 hls 实例
+            subtitleUrl: '', // 字幕文件URL
+            subtitles: [] as Subtitle[],
+            currentSubtitle: null as Subtitle | null,
+            subtitlePosition: 'bottom',
+            subtitleSize: 24,
+        }
+    },
+    computed : {
+        subtitleStyle() {
+            return {
+                fontSize: `${this.subtitleSize}px`,
+                bottom: this.subtitlePosition === 'bottom' ? '10%' : 'auto',
+                top: this.subtitlePosition === 'top' ? '10%' : 'auto',
+            }
         }
     },
     setup() {
         const videoPlayer = ref<HTMLVideoElement|undefined>(undefined)
         const videoInteractionPlayer = ref<HTMLDivElement|undefined>(undefined)
         const fileInput = ref<HTMLInputElement|undefined>(undefined)
+        const subtitleInput = ref<HTMLInputElement|undefined>(undefined)
         return {
-            videoPlayer,videoInteractionPlayer,fileInput
+            videoPlayer,videoInteractionPlayer,fileInput,subtitleInput
         }
     },
     mounted() {
@@ -166,8 +203,8 @@ export default {
         // Initialize controls
        
         video.addEventListener('timeupdate', this.updateProgress);
-        // video.addEventListener('fullscreenchange', function() {
-        // });
+        // video.addEventListener('timeupdate', this.updateSubtitle);
+        // video.addEventListener('fullscreenchange', function() { });
         if (this.isMobile()) {
             this.noSleep = new NoSleep();
         }
@@ -636,7 +673,85 @@ export default {
                 case 'wav': return 'audio/wav'
                 default: return ''
             }
-        }
+        },
+
+        async handleSubtitleChange(event: Event) {
+            const target = event.target as HTMLInputElement
+            const file = target?.files?.[0]
+            if (!file) return
+
+            try {
+                const text = await file.text()
+                const fileExt = file.name.split('.').pop()?.toLowerCase()
+                
+                if (fileExt === 'srt') {
+                    this.subtitles = this.parseSRT(text)
+                } else if (fileExt === 'vtt') {
+                    this.subtitles = this.parseVTT(text)
+                } else {
+                    alert('不支持的字幕格式')
+                    return
+                }
+            } catch (error) {
+                console.error('字幕加载失败:', error)
+                alert('字幕加载失败')
+            }
+        },
+
+        updateSubtitle() {
+            const video = this.videoPlayer
+            if (!video || this.subtitles.length === 0) return
+
+            const currentTime = video.currentTime
+            this.currentSubtitle = this.subtitles.find(subtitle => 
+                currentTime >= subtitle.startTime && currentTime <= subtitle.endTime
+            ) || null
+        },
+
+        timeToSeconds(timeStr: string): number {
+            const [hours, minutes, seconds] = timeStr.split(':').map(Number)
+            return hours * 3600 + minutes * 60 + seconds
+        },
+
+        parseSRT(srtContent: string): Subtitle[] {
+            const subtitles: Subtitle[] = []
+            const blocks = srtContent.trim().split(/\n\s*\n/)
+
+            blocks.forEach(block => {
+                const lines = block.trim().split('\n')
+                if (lines.length < 3) return
+
+                const times = lines[1].split(' --> ')
+                const startTime = this.timeToSeconds(times[0].replace(',', '.'))
+                const endTime = this.timeToSeconds(times[1].replace(',', '.'))
+                const text = lines.slice(2).join('\n')
+
+                subtitles.push({ startTime, endTime, text })
+            })
+
+            return subtitles
+        },
+
+        parseVTT(vttContent: string): Subtitle[] {
+            const subtitles: Subtitle[] = []
+            const blocks = vttContent.trim().split(/\n\s*\n/)
+            
+            // 跳过WEBVTT头
+            blocks.slice(1).forEach(block => {
+                const lines = block.trim().split('\n')
+                if (lines.length < 2) return
+
+                let timeLineIndex = lines[0].includes('-->') ? 0 : 1
+                const times = lines[timeLineIndex].split(' --> ')
+                const startTime = this.timeToSeconds(times[0])
+                const endTime = this.timeToSeconds(times[1])
+                const text = lines.slice(timeLineIndex + 1).join('\n')
+
+                subtitles.push({ startTime, endTime, text })
+            })
+
+            return subtitles
+        },
     }
 }
 </script>
@@ -671,7 +786,19 @@ export default {
     /* background-color: #000;  */
     z-index: 1;
 }
-
+.subtitle-layer {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    color: white;
+    text-shadow: 2px 2px 2px rgba(0, 0, 0, 0.8);
+    text-align: center;
+    padding: 10px;
+    z-index: 2;
+    pointer-events: none;
+    white-space: pre-line;
+    max-width: 80%;
+}
 
 video,
 audio {
@@ -757,6 +884,7 @@ audio {
     display: flex;
     gap: 7px;
     flex: 1;
+    margin-bottom:8px;
 }
 
 .url-input-container input {
