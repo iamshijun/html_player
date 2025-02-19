@@ -48,7 +48,7 @@
                 <button @click="play" :disabled="playState == 'PLAYING' ">播放</button>
                 <button @click="pause" :disabled="playState == 'PAUSED_PLAYBACK' ">暂停</button>
                 <button @click="stop" :disabled="playState =='STOPPED' ">停止</button>
-                <input type="range" v-model="volume" @change="setVolume" min="0" max="100" />
+                <input type="range" v-model="volume" @change="updateVolume" min="0" max="100" />
             </div>
             <div style="margin:10px;" ref="dplayerContainer" v-if="displayDeviceMedia">
                 <!-- <video controls ref="videoPlayer" style="height: 50vh;" ></video> -->
@@ -68,7 +68,7 @@ import axios from 'axios';
 import DPlayer from 'dplayer';  
 import Hls from 'hls.js';
 import flvjs from 'flv.js';
-import { AVTransportInfo, IAVTransportService, MediaInfo, PlayBackStateEvent, PlayStatus, UpnpDevice } from "@/types/upnp"
+import { AVTransportInfo, IAVTransportService, IRenderingControlService, MediaInfo, PlayBackStateEvent, PlayStatus, UpnpDevice } from "@/types/upnp"
 
 const testDevices = {
     "success": false,
@@ -158,7 +158,7 @@ export default {
 
         const dlnaService = ref<DLNAProxy|DLNAClient|null>(null)
         const avTransportService = ref<IAVTransportService|null>(null)
-
+        const renderingControlService = ref<IRenderingControlService|null>(null)
         const currentTrackUrl = ref<string|undefined>(undefined) 
 
         const playState = ref<string|PlayStatus>(PlayStatus.STOPPED)
@@ -177,15 +177,16 @@ export default {
         const eventSource = ref<EventSource|null>(null)
         // 搜索 DLNA 设备
         const searchDevices = () => {
-            // axios.get(`${dlnaProxy}/dlna/listDevices`)
+            // axios.get(`${dlnaDelegator}/dlna/listDevices`)
             //     .then(response => response.data)
             //     .then(response => { 
             //         devices.value = response.data as UpnpDevice[]
             //     })
 
             devices.value = testDevices.data
+
             // devices.value = []
-            // eventSource.value = new EventSource(`${dlnaProxy}/dlna/listDevicesStream`);
+            // eventSource.value = new EventSource(`${dlnaDelegator}/dlna/listDevicesStream`);
 
             // eventSource.value.onmessage = (event:MessageEvent<string>) => {
             //     //console.log(event)
@@ -351,8 +352,14 @@ export default {
                 let avTransportInfo ;
                 if(props.local){
                     const client = new DLNAClient(dlnaProxyURL, device.location)
-                    const avtservice = await client.getAVTransportService()
+                    await client.initDeviceInfo()
+                    const avtservice = client.getAVTransportService()
+                    const rcservice = client.getRenderingControlService()
+
                     avTransportService.value = avtservice
+                    renderingControlService.value = rcservice
+
+                    volume.value = await rcservice.getVolume()
 
                     const transportInfo = await avtservice.getTransportInfo()
                     const positionInfo = await avtservice.getPositionInfo()
@@ -396,7 +403,6 @@ export default {
                 console.error('Failed to connect to device:', error)
             }
         }
- 0
 
         const subscribeUpnpEvent = () => {
             if(!dlnaService.value){
@@ -404,7 +410,7 @@ export default {
             }
             const service = dlnaService.value
             service.subscribePlaybackState(async (data) => {
-                //console.log(data)
+                console.log(data)
                 const event = data.data.event as PlayBackStateEvent
 
                 const currentTrackDuration = event.currentTrackDuration
@@ -454,13 +460,13 @@ export default {
 
             const targetInSeconds = durationInSeconds.value * percent
             const seekTarget = formatTime(targetInSeconds)
-            resetPlay(seekTarget)
 
             seek(seekTarget)
         }
         // 播放控制函数
         const play = () => {
             if(avTransportService.value){
+                seek(currentTime.value) //主要给小爱音箱S12 调用play有响应但是不会恢复播放
                 startPlay() //先执行,后面如果订阅事件没问题 会有一个回调调整当前的时间和进度
                 avTransportService.value?.play()
             }
@@ -477,14 +483,20 @@ export default {
         }
 
         const seek = (seekTarget:string) => {
+            resetPlay(seekTarget)
             avTransportService.value?.seek(seekTarget)
         }
-
-        const setVolume = () => { //TODO
+        const setVolume = (vol:number) => {
+            const volValue = Math.min(100,vol)
             if (dlnaService.value) {
+                volume.value = volValue
                 // 实现音量控制逻辑
-                console.log('Setting volume to:', volume.value)
+                console.log('Setting volume to:', volValue)
+                renderingControlService.value?.setVolume(volValue)
             }
+        }
+        const updateVolume = () => { //给input type=range 更新/响应用(like:watch)
+            setVolume(volume.value)
         }
 
         // 生命周期钩子
@@ -510,8 +522,34 @@ export default {
             }
         })
 
+        const handleKeyEvent = (event: KeyboardEvent ) => {
+            if(!selectedDevice.value){
+                return
+            }
+            if(event.key == 'ArrowRight'){
+                seek(formatTime(currentTimeInSeconds.value + 10))
+            }else if(event.key == 'ArrowLeft'){
+                seek(formatTime(currentTimeInSeconds.value - 10))
+            }else if(event.key == 'ArrowUp'){
+                setVolume(Number(volume.value) + 5)
+            }else if(event.key == 'ArrowDown'){
+                setVolume(Number(volume.value) - 5)
+            }else if(event.key == ' '){ //空格播放暂停
+                if(playState.value == PlayStatus.PLAYING){
+                    pause()
+                }else{
+                    play()
+                }
+            }
+        }
 
-        
+        onMounted(() => {
+            document.addEventListener('keydown', handleKeyEvent);
+        });
+        onUnmounted(() => {
+            document.removeEventListener('keydown', handleKeyEvent);
+        });
+
 
         let dp : DPlayer|undefined;
         const initDPlayer = async (url:string) => {
@@ -574,7 +612,7 @@ export default {
         return {
             videoPlayer,dplayerContainer,
             devices,selectedDevice, onDeviceSelect,
-            play, pause, stop,seek,setVolume,
+            play, pause, stop,seek,updateVolume,
             currentTrackUrl,
             //进度，时间信息
             volume,progress,scrubPosition,playState,currentTime,duration ,handleScrubClick,

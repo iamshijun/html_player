@@ -9,6 +9,13 @@ export interface IAVTransportService {
     getMediaInfo() : Promise<MediaInfo>
 }
 
+export interface IRenderingControlService {
+    setVolume(volume: number) : Promise<any>
+    getVolume() : Promise<number>
+    isMute() : Promise<boolean>
+    setMute(mute: boolean) : Promise<any>
+}
+
 export interface DeviceInfo {
     services: ServiceInfo[]
 }
@@ -52,13 +59,13 @@ export interface MetadataItem {
         value: string
     },
     storageMedium?: string
-    artist?: string
-    album?: string
-    resolution?: string
-    genre?: string
-    duration?: string
-    albumArtURI?: string
-    size?: number
+    artist?: string|null
+    album?: string|null
+    resolution?: string|null
+    genre?: string|null
+    duration?: string|null
+    albumArtURI?: string|null
+    size?: number|null
 }
 
 export interface MediaInfo { 

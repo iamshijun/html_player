@@ -1,10 +1,48 @@
-import { IAVTransportService, PositionInfo, MediaMetadata, TransportInfo, MediaInfo } from '@/types/upnp';
+import { IAVTransportService, PositionInfo, MediaMetadata, TransportInfo, MediaInfo, IRenderingControlService } from '@/types/upnp';
 import axios, { AxiosInstance } from 'axios';  
+
+interface UpnpService {
+    serviceType: string
+    serviceId: string
+    controlURL: string
+    eventSubURL: string
+    SCPDURL: string
+}
+
+const soapBodyTmpl = `
+    <?xml version="1.0" encoding="utf-8"?>
+    <s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" 
+        s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
+        <s:Body>
+            <u:%ACTION% xmlns:u="%ST%">
+                <InstanceID>0</InstanceID>
+                %PARAMS%
+            </u:%ACTION%>
+        </s:Body>
+    </s:Envelope>
+    `
+function getSoapBody(
+    st: string,
+    action: string, 
+    params?: Record<string, string>
+) {
+    let paramsXml = '';
+    if (params) {
+        paramsXml = Object.entries(params)
+           .map(([key, value]) => `\n            <${key}>${value}</${key}>`)
+           .join('');
+    }
+    return soapBodyTmpl
+        .replace(/%ST%/g, st)
+        .replace(/%ACTION%/g, action)
+        .replace(/%PARAMS%/g, paramsXml);
+}
 
 //deprecated
 export class DLNAClient {
     private device: AxiosInstance;
     private baseURL: string;
+    private serviceList: UpnpService[] = []
     constructor(private proxyURL:string,descritpionUrl: string) { 
         this.device = axios.create({
             baseURL: proxyURL + "?url=" + descritpionUrl
@@ -17,27 +55,56 @@ export class DLNAClient {
     disconnect() {
         return true
     }
-
-    public async getAVTransportService() {
+    public async initDeviceInfo() {
         const res = await this.device.get('')
         const xml = res.data
         const parser = new DOMParser();
         const xmlDoc = parser.parseFromString(xml, "text/xml");
-        const serviceList = xmlDoc.getElementsByTagName('serviceList');
-        let service ;
-        for(var i = 0; i < serviceList.length; i++) {
-            const serviceType = serviceList[i].getElementsByTagName('serviceType')[0].textContent;
-            if (serviceType?.includes('AVTransport')) {
-                service = serviceList[i].getElementsByTagName('service')[0];
-                break;
-            }
-        } 
+        const serviceList = xmlDoc.getElementsByTagName('serviceList')[0];
+        const services = serviceList.getElementsByTagName("service")
+        for(const service of services) {
+           
+            const serviceType = service.getElementsByTagName('serviceType')[0].textContent!;
+            const serviceId = service.getElementsByTagName('serviceId')[0].textContent!;
+            const SCPDURL = service.getElementsByTagName('SCPDURL')[0].textContent!;
+            
+            const controlURL = service.getElementsByTagName('controlURL')[0].textContent?.replace(/^\//, '') ?? ""
+            const eventSubURL = service.getElementsByTagName('eventSubURL')[0].textContent?.replace(/^\//, '') ?? ""
+            
+            this.serviceList.push({
+                serviceType,
+                serviceId,
+                controlURL,
+                eventSubURL,
+                SCPDURL
+            })
+        }  
+    }
+
+    public getRenderingControlService() {
+        const service = this.serviceList.find((service) => {
+            return service.serviceType.includes('RenderingControl')
+        })
+        if(service == undefined) {
+            throw Error("RenderingControl service not found")
+        }
+        return new RenderingControl(
+            this.proxyURL,
+            this.baseURL + service.controlURL
+        )
+    }
+    public getAVTransportService() {
+
+        const service = this.serviceList.find((service) => {
+            return service.serviceType.includes('AVTransport')
+        })
         if(service == undefined) {
             throw Error("AVTransport service not found")
         }
-        const controlURL = service.getElementsByTagName('controlURL')[0].textContent?.replace(/^\//, '') ?? ""
-        const eventSubURL = service.getElementsByTagName('eventSubURL')[0].textContent?.replace(/^\//, '') ?? ""
-        return new AVTransportService(this.proxyURL, this.baseURL + controlURL,this.baseURL + eventSubURL )
+        return new AVTransportService(
+            this.proxyURL,
+             this.baseURL + service.controlURL,
+             this.baseURL + service.eventSubURL )
     }
 
 
@@ -46,20 +113,66 @@ export class DLNAClient {
     }
 }
 
+export class RenderingControl implements IRenderingControlService {
+    private renderingApi: AxiosInstance;
+    private st : string = 'urn:schemas-upnp-org:service:RenderingControl:1'
+    constructor(proxyURL:string,public controlURL: string) {
+        this.renderingApi = axios.create({
+            baseURL: proxyURL + "?url=" + controlURL
+        })
+    }
+    async isMute(): Promise<boolean> {
+        const response = await this.sendCommand('GetMute');
+        const parser = new DOMParser();
+        const xmlDoc = parser.parseFromString(response, "text/xml");
+        const responseNode = xmlDoc.getElementsByTagName('u:GetMuteResponse')[0];
+        if (!responseNode) {
+            console.warn('Invalid GetMute response')
+            return false;
+        }
+        const currentMute = responseNode.getElementsByTagName('CurrentMute')[0].textContent;
+        return currentMute === '1';
+    }
+    setMute(mute: boolean): Promise<any> {
+        return this.sendCommand('SetMute', {
+            Channel: 'Master',
+            DesiredMute: mute ? '1' : '0'
+        });
+    }
+    async setVolume(volume: number) {
+        return this.sendCommand('SetVolume', {
+            Channel: 'Master',
+            DesiredVolume: volume.toString()
+        });
+    }
+    async getVolume() {
+        const response = await this.sendCommand('GetVolume');
+        const parser = new DOMParser();
+        const xmlDoc = parser.parseFromString(response, "text/xml");
+        const responseNode = xmlDoc.getElementsByTagName('u:GetVolumeResponse')[0];
+        if(!responseNode){
+            console.warn('Invalid GetVolume response')
+            return 50;
+        }
+        const currentVolume = responseNode.getElementsByTagName('CurrentVolume')[0].textContent;
+        console.log(currentVolume) 
+        return Number(currentVolume)
+    }
+
+    async sendCommand(action: string, params?: Record<string, string>) {
+        const soapBody = getSoapBody(this.st, action, params);
+        return this.renderingApi.post('', soapBody, {
+            headers: {
+                'Content-Type': 'text/xml; charset="utf-8"',
+                'SOAPAction': `"${this.st}#${action}"`
+            }
+        }).then(response => response.data);
+    }
+}
+
 export class AVTransportService implements IAVTransportService {  
     private transportApi: AxiosInstance;
-    private soapBodyTmpl = `
-    <?xml version="1.0" encoding="utf-8"?>
-    <s:Envelope xmlns:s="http://schemas.xmlsoap.org/soap/envelope/" 
-        s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/">
-        <s:Body>
-            <u:%ACTION% xmlns:u="urn:schemas-upnp-org:service:AVTransport:1">
-                <InstanceID>0</InstanceID>
-                %PARAMS%
-            </u:%ACTION%>
-        </s:Body>
-    </s:Envelope>
-    `
+    private st : string = 'urn:schemas-upnp-org:service:AVTransport:1'
 
     constructor(proxyURL:string,public controlURL: string,public eventURL:string) { 
         this.transportApi = axios.create({
@@ -67,24 +180,13 @@ export class AVTransportService implements IAVTransportService {
         })
     }
 
-    private buildSoapBody(action: string, params?: Record<string, string>) {
-        let paramsXml = '';
-        if (params) {
-            paramsXml = Object.entries(params)
-                .map(([key, value]) => `\n            <${key}>${value}</${key}>`)
-                .join('');
-        }
-        return this.soapBodyTmpl
-            .replace(/%ACTION%/g, action)
-            .replace(/%PARAMS%/g, paramsXml);
-    }
-
+   
     async sendCommand(action: string, params?: Record<string, string>) {
-        const soapBody = this.buildSoapBody(action, params);
+        const soapBody = getSoapBody(this.st, action, params);
         return this.transportApi.post('', soapBody, {
             headers: {
                 'Content-Type': 'text/xml; charset="utf-8"',
-                'SOAPAction': `"urn:schemas-upnp-org:service:AVTransport:1#${action}"`
+                'SOAPAction': `"${this.st}#${action}"`
             }
         }).then(response => response.data);
     }
@@ -206,25 +308,25 @@ export class AVTransportService implements IAVTransportService {
             // 获取可选字段
             const artist = this.getNodeText(item, 'upnp:artist',upnp) || 
                           this.getNodeText(item, 'dc:creator',dc);
-            if (artist) metadata.item.artist = artist;
+            metadata.item.artist = artist;
 
             const album = this.getNodeText(item, 'upnp:album',upnp);
-            if (album) metadata.item.album = album;
+            metadata.item.album = album;
 
             const genre = this.getNodeText(item, 'upnp:genre',upnp);
-            if (genre) metadata.item.genre = genre;
+            metadata.item.genre = genre;
 
             const duration = this.getNodeText(item, 'upnp:duration',upnp);
-            if (duration) metadata.item.duration = duration;
+            metadata.item.duration = duration;
 
             const albumArtURI = this.getNodeText(item, 'upnp:albumArtURI',upnp);
-            if (albumArtURI) metadata.item.albumArtURI = albumArtURI;
+            metadata.item.albumArtURI = albumArtURI;
 
             const size = this.getNodeText(item, 'size');
             if (size) metadata.item.size = parseInt(size, 10);
 
             const resolution = this.getNodeText(item, 'upnp:resolution');
-            if (resolution) metadata.item.resolution = resolution;
+            metadata.item.resolution = resolution;
 
             const res = item.querySelector('res');
             if (res) {  
