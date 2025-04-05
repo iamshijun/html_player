@@ -263,8 +263,9 @@ export default {
 
             // 检查文件类型
             const supportedTypes = ['video/mp4', 'video/webm', 'video/ogg',
-                'audio/mpeg', 'audio/ogg', 'audio/wav']
+                'audio/mpeg', 'audio/ogg', 'audio/wav','audio/m4a','audio/mp4a-latm', 'audio/x-m4a']
             if (!supportedTypes.includes(file.type)) {
+                console.log(file.type)
                 alert('不支持的媒体格式')
                 return
             }

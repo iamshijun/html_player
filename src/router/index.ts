@@ -15,7 +15,7 @@ const router = createRouter({
       name: 'dlna',
       component: DLNAPlayer,
       props: {
-        local: true
+        local: false
       }
     }
   ]
